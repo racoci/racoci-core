@@ -1,49 +1,55 @@
-# 03-02: Spatial Semantics and Adjacency Operators
+# 3.2: Spatial Semantics and Adjacency Operators
 
-In the H-Cypher language (also known as R.A.C.O.C.I.), syntax is not treated as a linear ASCII character stream that is discarded after parsing. Syntax is a continuous, multi-dimensional topological manifold where spatial positioning, white space, nesting, and physical adjacency act as explicit semantic operators.
+In the H-Cypher domain-specific language (DSL), syntax is not treated as a transient 1D ASCII character stream that is discarded after tokenization and lexical analysis. Syntax is a continuous, multi-dimensional topological manifold where spatial positioning, whitespace juxtaposition, nesting boundaries, and physical adjacencies act as explicit semantic operators within the adhesive hypergraph category $\mathbf{Hyper}$.
 
 ---
 
-## 1. Spatial Positioning as Syntactic Primitives
+## 3.2.1: Spatial Positioning as Syntactic Primitives
 
-Unlike traditional languages where white space is trivia ignored by the lexer, spatial placement in Holds directly constructs the topological graph.
+Unlike traditional programming languages where whitespace is classified as trivia ignored by the lexer, spatial placement in Holds directly constructs the topological graph manifold inside the Stage 0 Memory Arena.
 
-### 1.1 White Space as Structural Composition (`l a b c`)
+```text
+ Syntactic Juxtaposition Operator (Whitespace Composition):
+ Symbol "l"  [Space]  Symbol "a"  [Space]  Symbol "b"  [Space]  Symbol "c"
+      |                   |                   |                   |
+      v                   v                   v                   v
+ +-------------------------------------------------------------------------+
+ | Quaternary Hyperedge / Nested Application: (((l . a) . b) . c)          |
+ +-------------------------------------------------------------------------+
 
-* 
-**Non-Concatenative Juxtaposition:** Juxtaposing symbols with white space does not represent token separation; it instantiates an active juxtaposition operator $\cdot$.
+```
 
+### 3.2.1.1 Non-Concatenative Whitespace Juxtaposition
 
-* 
-**Application and Composition:** An expression such as `l a b c` represents nested application or structural composition $(((l \cdot a) \cdot b) \cdot c)$, or alternatively a single quaternary hyperedge linking the four nodes in spatial order.
+* **Active Juxtaposition Operator ($\cdot$):** Juxtaposing symbols with whitespace does not represent token separation; it instantiates an active juxtaposition operator $\cdot$ in $O(1)$ allocation time.
+* **Algebraic Application and Composition:** An expression such as `l a b c` represents nested application or structural composition $(((l \cdot a) \cdot b) \cdot c)$, or alternatively a single quaternary hyperedge linking the four atoms in spatial order.
+* **Compact Compositionality:** Because whitespace is an operator, complex compositions can be written compactly without cluttering syntax with redundant parenthetical noise or comma separators.
 
+### 3.2.1.2 Scope Boundaries and Encapsulation Operators
 
-* 
-**Compact Compositionality:** Because white space is an operator, complex compositions can be written compactly without cluttering syntax with redundant parentheses or commas.
+Spatial enclosure defines scope boundaries and membrane isolation directly on the substrate:
 
-
-
-### 1.2 Boundary Encapsulation and Scope Membranes
-
-Spatial enclosure defines scope boundaries (membranes) directly on the substrate:
-
-* 
-**Curly Braces (`{ ... }`):** Isolate local scope manifolds and property subgraphs. Properties and values are not JSON-formatted key-value pairs; they are topological adjacencies anchored inside the `{}` membrane.
-
-
-* 
-**Square Brackets (`[ ... ]`):** Define structural grouping boundaries and hyperedge membranes.
-
-
+* **Curly Braces (`{ ... }`):** Isolate local scope manifolds and property subgraphs. Properties and values are not JSON-formatted key-value pairs; they are topological adjacencies anchored inside the `{}` membrane.
+* **Square Brackets (`[ ... ]`):** Define structural grouping boundaries (membranes $M$) and $n$-ary hyperedge perimeters.
 * **Parentheses (`( ... )`):** Establish local evaluation ordering and node boundary anchors without creating isolated sub-membranes.
 
 ---
 
-## 2. N-Ary Hyperedge Spatial Syntax
+## 3.2.2: N-Ary Hyperedge Spatial Syntax
 
-Standard graph query languages (such as Cypher) force all relationships into binary directed edges `(A) -[R]-> (B)`. R.A.C.O.C.I. elevates spatial layout to represent arbitrary $n$-ary hyperedges natively.
+Standard graph query languages force all relationships into binary directed edges `(A) -[R]-> (B)`. H-Cypher elevates spatial layout to represent arbitrary $n$-ary hyperedges natively.
 
-### 2.1 Positional Role Mapping in $N$-Ary Hyperedges
+```text
+ Positional Role Mapping in Ternary Hyperedge:
+ 
+             (employee, project, skill) : ASSIGNMENT_EVENT
+                 |          |       |
+                 v          v       v
+               Actor     Target  Capability
+
+```
+
+### 3.2.2.1 Positional Role Mapping in $N$-Ary Hyperedges
 
 In an $n$-ary hyperedge connecting $N$ entities, positional ordering within the syntactic boundary determines semantic roles without requiring named argument parameters:
 
@@ -52,13 +58,10 @@ In an $n$-ary hyperedge connecting $N$ entities, positional ordering within the 
 
 ```
 
-* **Spatial Role Inference:** The engine infers that the first position is the actor (`employee`), the second position is the target domain (`project`), and the third position is the capability constraint (`s`).
-* 
-**Relational Renormalization:** This allows collapsing 3-way binary join cycles (e.g., `(e)-[ASSIGNED]->(p)`, `(e)-[HAS]->(s)`, `(p)-[REQUIRES]->(s)`) into a single atomic ternary hyperedge via a single spatial rewrite.
+* **Spatial Role Inference:** The engine infers that the first position is the actor (`employee`), the second position is the target domain (`project`), and the third position is the capability constraint (`skill`).
+* **Relational Renormalization:** This allows collapsing 3-way binary join cycles (e.g., `(e)-[:ASSIGNED]->(p)`, `(e)-[:HAS]->(s)`, `(p)-[:REQUIRES]->(s)`) into a single atomic ternary hyperedge via a single spatial DPO rewrite.
 
-
-
-### 2.2 Inline Hyperedge Composition and Deep Nesting
+### 3.2.2.2 Inline Hyperedge Composition and Deep Nesting
 
 H-Cypher supports nesting hyperedges inside other hyperedges directly without assigning intermediate temporary variables:
 
@@ -71,13 +74,19 @@ The engine reads the spatial embedding and automatically links the parent hypere
 
 ---
 
-## 3. Structural Semantics vs. Nominal JSON Attributes
+## 3.2.3: Structural Semantics vs. Nominal JSON Attributes
 
 In conventional systems, metadata is attached to nodes as key-value JSON objects. In Holds, attributes are structural adjacencies.
 
-### 3.1 Property Adjacency Nodes
+```text
+ Structural Property Adjacency:
+ [ Node Atom: node_raw ] ====( -[:has_name]-> )====> [ Literal Atom: "Babosa" ]
 
-To attach a property to a node, H-Cypher constructs an adjacency edge pointing from the node to a value atom:
+```
+
+### 3.2.3.1 Property Adjacency Nodes
+
+To attach a property to a node, H-Cypher constructs an adjacency edge pointing from the node to a literal value atom:
 
 ```text
 { (node_raw) -[:has_name]-> ("Babosa") }
@@ -86,27 +95,26 @@ To attach a property to a node, H-Cypher constructs an adjacency edge pointing f
 
 When a rewrite mutates an attribute, it does not modify a record in place; it removes the binary adjacency and instantiates a higher-arity hyperedge (e.g., converting a binary `uses` link into a quaternary `extracts` hyperedge).
 
-### 3.2 Spatial Propagation of Tags
+### 3.2.3.2 Spatial Propagation of Tags
 
 Tags attached to a grouping boundary propagate spatially inward to all enclosed atoms unless blocked by an opaque membrane (`meta::opaque`).
 
 ---
 
-## 4. Suggested Sub-Modules for Extended Documentation
+## 3.2.4: Modular Architecture for Extended Specification Files
 
-To maintain granular depth as the DSL specification grows, the following breakdown into specialized sub-files is recommended for future context loading:
+To maintain granular depth as the DSL specification grows, the following breakdown into specialized sub-modules governs the extended language specification:
 
-* 
-`03-03a-subgraph-isomorphism-matching.md` (Detailed algorithmic spec for VF2/WL pattern matching over nested hypergraphs) 
+```text
+ Extended Documentation Sub-Modules:
+ +---------------------------------------------------------------------------------+
+ | 03-03a-subgraph-isomorphism-matching.md (VF2/WL over nested hypergraphs)        |
+ +---------------------------------------------------------------------------------+
+ | 03-03b-rewrite-execution-and-residues.md (DPO pushouts and sys::residue logic)  |
+ +---------------------------------------------------------------------------------+
+ | 03-04a-negative-constraints-and-antigraphs.md (Vacuum checking via ~ operator)  |
+ +---------------------------------------------------------------------------------+
+ | 03-04b-superposition-and-quantum-collapsing.md (Superposition via | operator)   |
+ +---------------------------------------------------------------------------------+
 
-
-* 
-`03-03b-rewrite-execution-and-residues.md` (Step-by-step state transition and `sys::residue` generation logic) 
-
-
-* 
-`03-04a-negative-constraints-and-antigraphs.md` (Vacuum checking via `~` operator) 
-
-
-* 
-`03-04b-superposition-and-quantum-collapsing.md` (Superposition matching via `|` operator for non-deterministic AI inputs)
+```

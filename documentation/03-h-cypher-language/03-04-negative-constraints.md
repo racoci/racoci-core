@@ -73,7 +73,7 @@ Negation in Holds is strictly boundary-aware. Because hypergraphs are partitione
 
 ### 3.4.2.1 Membrane-Local Vacuum Evaluation
 
-When a negative constraint is declared inside a grouping membrane `[ M ~ (pattern) ]`, the anti-graph search space is bounded by the perimeter of membrane `M`:
+When a negative constraint is declared inside a grouping membrane `[ M ~ (pattern) ]`, the anti-graph search space is bounded by the perimeter of membrane $M$:
 
 ```text
   [ Membrane M ]
@@ -125,9 +125,9 @@ During pattern matching, the engine evaluates the disjunction as a single parall
 
 In modern AI architectures, symbolic entities often correlate with continuous vector embeddings. Holds models this by embedding latent vector spaces directly into hypergraph nodes using superposition membranes:
 
-$$\text{Node}_{\text{hybrid}} = \text{SymbolicShape} \;\big\vert{}\; \text{EmbeddingVector}(\mathbb{R}^d)$$
+$$\text{Node}_{\text{hybrid}} = \text{SymbolicShape} \;\Big\vert{}\; \text{EmbeddingVector}(\mathbb{R}^d)$$
 
-* **Symbolic Branch:** Evaluated via $h_{topo}$ structural isomorphism.
+* **Symbolic Branch:** Evaluated via $h_{\text{topo}}$ structural isomorphism.
 * **Latent Branch:** Evaluated via cosine similarity or nearest-neighbor vector distance against threshold constraints.
 
 A rewrite rule can thus match a pattern if its symbolic topology matches OR if its latent vector similarity exceeds a defined threshold $\cos(\theta) \ge 0.85$:
@@ -170,6 +170,6 @@ When multiple rewrite rules $R_1: L_1 \implies R_1'$ and $R_2: L_2 \implies R_2'
 
 The R.A.C.O.C.I. engine resolves non-deterministic conflicts through three mechanisms:
 
-1. **Priority Ordering ($h_{type}$ Specificity):** Rules with more specific topological constraints (higher arity or deeper boundary nesting) take precedence over generic rules.
+1. **Priority Ordering ($h_{\text{type}}$ Specificity):** Rules with more specific topological constraints (higher arity or deeper boundary nesting) take precedence over generic rules.
 2. **Confluence Verification (Knuth-Bendix Completion):** The engine checks if the execution paths of $R_1$ and $R_2$ eventually converge to an isomorphic target topology ($R_1 \circ R_2 \cong R_2 \circ R_1$). If confluent, execution proceeds in parallel.
 3. **Branching Manifold Creation:** If the rules are non-confluent, the engine instantiates a parallel universe boundary `[ sys::branch ]`, executing both rewrite pathways concurrently in separate projection spaces without mutating the shared parent root.
