@@ -52,7 +52,7 @@ fn test_end_to_end_deep_nested_pattern_matching_and_rewrite() {
     // Therefore, we must match and rewrite the expression at the top-level `root`:
     // LHS = Adjacency( MulTag, Adjacency(AddTag, Variable("val"), Atom("val::0")), Variable("y_var") )
     // RHS = Adjacency( MulTag, Variable("val"), Variable("y_var") )
-    
+
     let rule_l = Pattern::Adjacency(vec![
         Pattern::Atom(b"op::mul".to_vec()),
         Pattern::Adjacency(vec![
@@ -62,7 +62,7 @@ fn test_end_to_end_deep_nested_pattern_matching_and_rewrite() {
         ]),
         Pattern::Variable("y_var".to_string()),
     ]);
-    
+
     let rule_r = Pattern::Adjacency(vec![
         Pattern::Atom(b"op::mul".to_vec()),
         Pattern::Variable("val".to_string()),
@@ -79,8 +79,10 @@ fn test_end_to_end_deep_nested_pattern_matching_and_rewrite() {
 
     // Execute the DPO Rewrite on root, simplifying (x + 0) * y -> x * y
     let simplified_root = evaluator.evaluate_rewrite(root, &rule_l, &rule_r).unwrap();
-    
+
     // Verify that the simplified root is indeed Adjacency(op::mul, x, y)
-    let expected_root = evaluator.engine.intern(Topology::Adjacency(vec![mul_tag, x, y]));
+    let expected_root = evaluator
+        .engine
+        .intern(Topology::Adjacency(vec![mul_tag, x, y]));
     assert_eq!(simplified_root, expected_root);
 }

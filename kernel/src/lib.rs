@@ -4,8 +4,15 @@
 //! the core Holds substrate primitives: Atoms, Adjacencies, Membranes,
 //! absolute interning identity (H_id), and Double Pushout (DPO) rewriting.
 
+#![cfg_attr(not(test), no_std)]
+
+extern crate alloc;
+
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use blake3::Hash;
-use std::collections::HashMap;
 
 /// The unique identifier of a node in the Hypergraph Arena.
 /// Using a 32-bit index provides a compact, relative pointer representation
@@ -76,8 +83,8 @@ pub struct IdentityEngine {
     /// Contiguous node storage.
     pub arena: HypergraphArena,
 
-    /// Interning pool mapping exact cryptographic hashes (H_id) to NodeId.
-    pub intern_pool: HashMap<Hash, NodeId>,
+    /// Interning pool mapping exact cryptographic hashes (H_id as [u8; 32]) to NodeId.
+    pub intern_pool: BTreeMap<[u8; 32], NodeId>,
 
     /// Parallel index array for constant-time (O(1)) lookup of a node's hash.
     pub id_to_hash: Vec<Hash>,
@@ -88,7 +95,7 @@ impl IdentityEngine {
     pub fn new() -> Self {
         Self {
             arena: HypergraphArena::new(),
-            intern_pool: HashMap::new(),
+            intern_pool: BTreeMap::new(),
             id_to_hash: Vec::with_capacity(1_000_000),
         }
     }
@@ -98,15 +105,16 @@ impl IdentityEngine {
     /// Otherwise, a new node is allocated and its hash is indexed.
     pub fn intern(&mut self, topo: Topology) -> NodeId {
         let hash = self.compute_hash(&topo);
+        let hash_bytes = *hash.as_bytes();
 
         // O(1) Deduplication: reuse existing node pointer if matching hash exists
-        if let Some(&existing_id) = self.intern_pool.get(&hash) {
+        if let Some(&existing_id) = self.intern_pool.get(&hash_bytes) {
             return existing_id;
         }
 
         // Otherwise, allocate a new raw node
         let new_id = self.arena.allocate_raw(topo);
-        self.intern_pool.insert(hash, new_id);
+        self.intern_pool.insert(hash_bytes, new_id);
         self.id_to_hash.push(hash);
 
         new_id
@@ -174,7 +182,7 @@ pub enum Pattern {
 }
 
 /// Represents variable bindings captured during the Left-Hand Side (LHS) match phase.
-pub type BindingMap = HashMap<String, NodeId>;
+pub type BindingMap = BTreeMap<String, NodeId>;
 
 /// The execution loop and primitive evaluator of Holds.
 /// Performs localized subgraph isomorphism matching and Double Pushout (DPO) substitution.

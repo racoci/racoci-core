@@ -35,40 +35,94 @@ This document tracks what has been accomplished in the Holds environment and map
 
 ---
 
-## 🚀 What is Next (Future Stages)
+## 🚀 Future Stages & Atomic Implementations
 
-### 📊 Stage 1: `no_std` and WebAssembly Footprint Optimization
-* **Goal:** Shrink the compiled library footprint closer to the **15 KB** target for direct, cold-start browser loading.
-* **Tasks:**
-  1. Configure `blake3` with `default-features = false` in `Cargo.toml`.
-  2. Implement `#![cfg_attr(not(test), no_std)]` in `lib.rs`.
-  3. Integrate `extern crate alloc;` and map dynamic structures (`Vec`, `String`, `BTreeMap`) conditionally for non-test profiles.
+To ensure high engineering velocity, absolute code quality, and non-breaking changes, all future work is divided into minimal, implementable, and well-documented atomic features.
+
+---
+
+### 📊 Stage 1: `no_std` & WebAssembly Footprint Optimization
+* **Goal:** Compile the kernel without the standard library (`std`) to support direct, low-overhead browser loading and hit the **15 KB** footprint target.
+
+#### Task 1.1: Dependency and Attribute Setup
+* **Description:** Update `Cargo.toml` dependencies and add `no_std` conditional compiling attributes to the library root.
+* **Implementation Plan:**
+  - Configure `blake3` dependency with `default-features = false` in `Cargo.toml`.
+  - Add `#![cfg_attr(not(test), no_std)]` to the top of `kernel/src/lib.rs`.
+* **Verification & Tests:**
+  - **Compilation Test:** Verify the library compiles with `cargo check --target wasm32-unknown-unknown` under release.
+  - **Unit Tests:** Run `cargo test` to ensure existing standard testing features do not break under the test profile (which still uses `std`).
+
+#### Task 1.2: Refactor to BTreeMap for Zero-Dependency `no_std`
+* **Description:** The standard library `HashMap` relies on the system random-number generator, which is unavailable in raw WebAssembly `no_std` without importing heavy external crates (like `hashbrown` or `rand`). We will refactor our indexing maps to use `BTreeMap` from the `alloc` crate for zero external dependency bloat.
+* **Implementation Plan:**
+  - Replace `std::collections::HashMap` with `alloc::collections::BTreeMap` inside `lib.rs` under non-test profiles.
+  - Since `blake3::Hash` does not implement `Ord` (required by `BTreeMap`), map `intern_pool` to use the byte representation `[u8; 32]` as the key: `BTreeMap<[u8; 32], NodeId>`.
+  - Map `BindingMap` to `BTreeMap<String, NodeId>`.
+  - Import allocator collections using `extern crate alloc;` at the top of the file under `#[cfg(not(test))]`.
+* **Verification & Tests:**
+  - **Compilation Test:** Run `cargo check --target wasm32-unknown-unknown`.
+  - **Unit Tests:** Run `cargo test` to verify that all 6 existing unit tests pass flawlessly with the new `BTreeMap` backing.
+  - **E2E Integration Tests:** Run `cargo test --test integration_tests` to verify end-to-end rewrite matches.
+
+---
 
 ### 🧬 Stage 2: Weisfeiler-Lehman (WL) Canonizer (Stage 2)
 * **Goal:** Enable global topological isomorphism matching across nested groupings and membranes.
-* **Tasks:**
-  1. Implement the $k$-hop color refinement loop.
-  2. Write coinductive Greatest Fixed Point (GFP) termination for Spin -1 boundaries to handle non-well-founded loops without recursive overflows.
+
+#### Task 2.1: $k$-Hop Color Refinement Loop
+* **Description:** Implement an iterative color refinement loop in the `IdentityEngine` to assign stable topological signatures to every node based on its neighbors.
+* **Verification & Tests:**
+  - **Unit Test:** Create `test_wl_color_refinement_isomorphism` verifying that isomorphic but structurally rotated graphs receive identical signatures.
+
+#### Task 2.2: Coinductive Greatest Fixed Point (GFP) Cycle Termination
+* **Description:** Enforce strict Greatest Fixed Point (GFP) termination when the color refinement engine encounters a grouping boundary with `Spin = -1` (Klein Bottle topology), avoiding infinite recursions.
+* **Verification & Tests:**
+  - **Unit Test:** Create `test_gfp_cycle_termination` asserting that circular and self-referential graph loops hash and terminate in $O(1)$ space without stack overflow.
+  - **E2E Integration Test:** Verify that quines and self-containing compiler scopes compile and run deterministically.
+
+---
 
 ### 🔤 Stage 3: AST-Free H-Cypher Parser (Stage 4)
 * **Goal:** Direct text-to-graph parsing.
-* **Tasks:**
-  1. Define syntax-to-topology layout rules (whitespace juxtaposition, square/curly bracket scoping).
-  2. Write recursive rewrite rules that parse H-Cypher character streams directly into the arena as topological primitives.
+
+#### Task 3.1: Syntax-to-Topology Layout Mapping
+* **Description:** Design parsing rules converting text syntax into raw topological structures (whitespace juxtaposition, scoping boundaries).
+* **Verification & Tests:**
+  - **Unit Test:** Verify text input like `"a b c"` parses into a quaternary `Adjacency`.
+
+#### Task 3.2: Parsing via Recursive DPO Rewriting
+* **Description:** Implement the parsing engine as a sequence of DPO rewrite rules that progressively simplify character token arrays.
+* **Verification & Tests:**
+  - **E2E Integration Test:** Parse a complex H-Cypher script directly into the memory arena and verify isomorphic equivalence with a pre-built reference graph.
+
+---
 
 ### 🔒 Stage 4: High-Performance Concurrent Interning
-* **Goal:** Lock-free multi-threaded interning writes.
-* **Tasks:**
-  1. Replace the locked interning pool with a **Lock-Free Concurrent Robin Hood Hash Table** or CAS-synchronized flat array index table.
+* **Goal:** Lock-free concurrent interning writes.
+
+#### Task 4.1: Lock-Free Hash Table
+* **Description:** Implement a Lock-Free Concurrent Robin Hood Hash Table utilizing atomic CAS pointer increments.
+* **Verification & Tests:**
+  - **Unit Test:** Spawn 100 concurrent threads executing parallel writes to the interning pool and assert no duplicate NodeIds are created.
+
+---
 
 ### 🧵 Stage 5: WebAssembly Atomics and Worker Scaling
-* **Goal:** Multi-core parallel execution inside Wasm.
-* **Tasks:**
-  1. Implement `wasm32-atomic` instruction sets (`atomic.notify`, `atomic.wait`, CAS pointer loops) over SharedArrayBuffers to synchronize parallel worker threads.
+* **Goal:** Multi-core parallel execution inside WebAssembly.
+
+#### Task 5.1: `wasm32-atomic` Synchronization
+* **Description:** Leverage `wasm32-atomic` instruction sets over SharedArrayBuffers to synchronize parallel worker threads.
+* **Verification & Tests:**
+  - **Compilation Test:** Verify compilation under the WebAssembly target with atomic features enabled.
+  - **E2E Integration Test:** Assert non-blocking operations on parallel thread pools with zero lock contention.
+
+---
 
 ### 🌐 Stage 6: P2P Membrane Partitioning & Sync
 * **Goal:** Decentralized, internet-scale replication.
-* **Tasks:**
-  1. Implement boundary sharding along membranes.
-  2. Write the Merkle Mountain Range (MMR) delta search transport.
-  3. Build Ed25519 signature validation within `sys::provenance` metadata.
+
+#### Task 6.1: Membrane Sharding & MMR delta-sync
+* **Description:** Implement boundary sharding along membranes and MMR delta search transport.
+* **Verification & Tests:**
+  - **E2E Integration Test:** Sync two distributed peer instances, verifying that only the differential subgraph ($\Delta H$) is streamed and ingested.
