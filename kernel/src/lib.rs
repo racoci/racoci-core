@@ -189,6 +189,77 @@ impl<'a> PrimitiveEvaluator<'a> {
         Self { engine }
     }
 
+    /// Recursively traverses a matched pattern and collects all sub-pattern IDs
+    /// and their matched physical `NodeId`s in the arena.
+    pub fn traverse_pattern_matches(
+        &self,
+        pattern: &Pattern,
+        current: NodeId,
+        sub_pattern_counter: &mut u32,
+        matches: &mut Vec<(u32, NodeId)>,
+    ) {
+        let my_id = *sub_pattern_counter;
+        *sub_pattern_counter += 1;
+        matches.push((my_id, current));
+
+        match pattern {
+            Pattern::Variable(_) => {}
+            Pattern::Atom(_) => {}
+            Pattern::Adjacency(pattern_children) => {
+                if let Some(Topology::Adjacency(node_children)) =
+                    self.engine.arena.get_node(current)
+                {
+                    if node_children.len() == pattern_children.len() {
+                        for (pc, &nc) in pattern_children.iter().zip(node_children.iter()) {
+                            self.traverse_pattern_matches(pc, nc, sub_pattern_counter, matches);
+                        }
+                    }
+                }
+            }
+            Pattern::Membrane(pattern_children) => {
+                if let Some(Topology::Membrane(node_children)) = self.engine.arena.get_node(current)
+                {
+                    if node_children.len() == pattern_children.len() {
+                        for (pc, &nc) in pattern_children.iter().zip(node_children.iter()) {
+                            self.traverse_pattern_matches(pc, nc, sub_pattern_counter, matches);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Recursively collects all variable names referenced in a pattern.
+    pub fn collect_variables(&self, pattern: &Pattern, vars: &mut Vec<String>) {
+        match pattern {
+            Pattern::Variable(name) => {
+                if !vars.contains(name) {
+                    vars.push(name.clone());
+                }
+            }
+            Pattern::Atom(_) => {}
+            Pattern::Adjacency(children) | Pattern::Membrane(children) => {
+                for child in children {
+                    self.collect_variables(child, vars);
+                }
+            }
+        }
+    }
+
+    /// Verifies if a given NodeId is a system residue metadata edge.
+    pub fn is_residue_edge(&self, id: NodeId) -> bool {
+        if let Some(Topology::Adjacency(links)) = self.engine.arena.get_node(id) {
+            if links.len() == 3 {
+                if let Some(Topology::Atom(data)) = self.engine.arena.get_node(links[2]) {
+                    if data == b"sys::residue" {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Evaluates a DPO topological rewrite rule (L => R).
     /// If LHS matches, the RHS is instantiated under captured bindings,
     /// a sys::residue link is formed, and the new root NodeId is returned.
@@ -202,6 +273,86 @@ impl<'a> PrimitiveEvaluator<'a> {
 
         // 1. MATCH: Resolve structural isomorphism over k-hop boundary
         if self.match_subgraph(root_id, rule_l, &mut bindings) {
+            // Collect all matched elements
+            let mut matches = Vec::new();
+            let mut sub_pattern_counter = 0;
+            self.traverse_pattern_matches(rule_l, root_id, &mut sub_pattern_counter, &mut matches);
+
+            // Deduplicate to get the set of all matched NodeIds
+            let mut matched_nodes = Vec::new();
+            for &(_, node_id) in &matches {
+                if !matched_nodes.contains(&node_id) {
+                    matched_nodes.push(node_id);
+                }
+            }
+
+            // Identify preserved nodes (interface K)
+            let mut preserved_vars = Vec::new();
+            self.collect_variables(rule_r, &mut preserved_vars);
+
+            let mut preserved_nodes = Vec::new();
+            for var in &preserved_vars {
+                if let Some(&node_id) = bindings.get(var) {
+                    if !preserved_nodes.contains(&node_id) {
+                        preserved_nodes.push(node_id);
+                    }
+                }
+            }
+
+            // --- 1. IDENTIFICATION CONDITION VALIDATION ---
+            // If two distinct pattern elements map to the exact same physical node in G,
+            // that node must belong to the interface K (preserved_nodes).
+            let mut seen_nodes = Vec::new();
+            let mut duplicate_nodes = Vec::new();
+            for &(_sub_id, node_id) in &matches {
+                if seen_nodes.contains(&node_id) {
+                    if !duplicate_nodes.contains(&node_id) {
+                        duplicate_nodes.push(node_id);
+                    }
+                } else {
+                    seen_nodes.push(node_id);
+                }
+            }
+
+            for dup_node in duplicate_nodes {
+                if !preserved_nodes.contains(&dup_node) {
+                    return Err(
+                        "Identification condition violated: distinct pattern elements match the same physical node, but the node is not preserved in the interface.",
+                    );
+                }
+            }
+
+            // --- 2. STRICT DANGLING EDGE VALIDATION ---
+            // Nodes slated for deletion are matched nodes that are NOT preserved.
+            let mut deleted_nodes = Vec::new();
+            for &node_id in &matched_nodes {
+                if !preserved_nodes.contains(&node_id) {
+                    deleted_nodes.push(node_id);
+                }
+            }
+
+            // Verify that no other active adjacency/edge in the arena refers to any deleted node,
+            // unless that edge is also matched and consumed (is in matched_nodes).
+            // We ignore sys::residue edges, as they are metadata history traces.
+            for id in 0..(self.engine.arena.len() as NodeId) {
+                if !matched_nodes.contains(&id) && !self.is_residue_edge(id) {
+                    if let Some(topo) = self.engine.arena.get_node(id) {
+                        match topo {
+                            Topology::Atom(_) => {}
+                            Topology::Adjacency(children) | Topology::Membrane(children) => {
+                                for &child in children {
+                                    if deleted_nodes.contains(&child) {
+                                        return Err(
+                                            "Dangling edge condition violated: an active edge refers to a node slated for deletion, but that edge is not matched and consumed.",
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. TRANSFORM: Inject RHS pattern using bound variables
             let new_root = self.inject_subgraph(rule_r, &bindings)?;
 
@@ -402,5 +553,95 @@ mod tests {
         } else {
             panic!("Residue causal link not found!");
         }
+    }
+
+    #[test]
+    fn test_dangling_edge_condition_validation() {
+        let mut engine = IdentityEngine::new();
+
+        // Prepare raw graph structure:
+        // Node 0: Atom("x")
+        // Node 1: Atom("y")
+        // Node 2: Adjacency([0, 1]) (this is root)
+        // Node 3: Adjacency([1])    (other edge referring to Node 1)
+        let x = engine.intern(Topology::Atom(b"x".to_vec()));
+        let y = engine.intern(Topology::Atom(b"y".to_vec()));
+        let root = engine.intern(Topology::Adjacency(vec![x, y]));
+        let _other = engine.intern(Topology::Adjacency(vec![y]));
+
+        // Rewrite rule L => R:
+        // L = Adjacency( Variable("a"), Variable("b") )
+        // R = Variable("a")
+        // Node 1 is matched but not preserved, meaning it is slated for deletion.
+        // Node 3 refers to Node 1 and is not consumed, so this must fail.
+        let rule_l = Pattern::Adjacency(vec![
+            Pattern::Variable("a".to_string()),
+            Pattern::Variable("b".to_string()),
+        ]);
+        let rule_r = Pattern::Variable("a".to_string());
+
+        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
+
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap(),
+            "Dangling edge condition violated: an active edge refers to a node slated for deletion, but that edge is not matched and consumed."
+        );
+    }
+
+    #[test]
+    fn test_identification_condition_validation() {
+        let mut engine = IdentityEngine::new();
+
+        // Prepare raw graph structure with duplicate references:
+        let x = engine.intern(Topology::Atom(b"x".to_vec()));
+        let root = engine.intern(Topology::Adjacency(vec![x, x]));
+
+        // Rewrite rule L => R:
+        // L = Adjacency( Variable("a"), Variable("b") )
+        // R = Atom("new_node")
+        // Distinct variables "a" and "b" match the same node, but it is not preserved.
+        let rule_l = Pattern::Adjacency(vec![
+            Pattern::Variable("a".to_string()),
+            Pattern::Variable("b".to_string()),
+        ]);
+        let rule_r = Pattern::Atom(b"new_node".to_vec());
+
+        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
+
+        assert!(res.is_err());
+        assert_eq!(
+            res.err().unwrap(),
+            "Identification condition violated: distinct pattern elements match the same physical node, but the node is not preserved in the interface."
+        );
+    }
+
+    #[test]
+    fn test_identification_condition_satisfied_when_preserved() {
+        let mut engine = IdentityEngine::new();
+
+        // Prepare raw graph structure with duplicate references:
+        let x = engine.intern(Topology::Atom(b"x".to_vec()));
+        let root = engine.intern(Topology::Adjacency(vec![x, x]));
+
+        // Rewrite rule L => R:
+        // L = Adjacency( Variable("a"), Variable("b") )
+        // R = Adjacency([Variable("a"), Variable("b")])
+        // "a" and "b" match the same node, and both are preserved in rule_r. Satisfies condition.
+        let rule_l = Pattern::Adjacency(vec![
+            Pattern::Variable("a".to_string()),
+            Pattern::Variable("b".to_string()),
+        ]);
+        let rule_r = Pattern::Adjacency(vec![
+            Pattern::Variable("a".to_string()),
+            Pattern::Variable("b".to_string()),
+        ]);
+
+        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
+
+        assert!(res.is_ok());
     }
 }
