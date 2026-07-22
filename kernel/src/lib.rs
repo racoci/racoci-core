@@ -220,7 +220,8 @@ impl IdentityEngine {
                         if let Some(topo) = self.arena.get_node(parent) {
                             match topo {
                                 Topology::Atom(_) => {}
-                                Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
+                                Topology::Adjacency(children)
+                                | Topology::Membrane { children, .. } => {
                                     if children.contains(&v) {
                                         neighbor_colors.push(colors[&parent]);
                                     }
@@ -313,10 +314,17 @@ impl<'a> PrimitiveEvaluator<'a> {
                     }
                 }
             }
-            Pattern::Membrane { children: pattern_children, spin: pattern_spin } => {
-                if let Some(Topology::Membrane { children: node_children, spin: node_spin }) = self.engine.arena.get_node(current)
+            Pattern::Membrane {
+                children: pattern_children,
+                spin: pattern_spin,
+            } => {
+                if let Some(Topology::Membrane {
+                    children: node_children,
+                    spin: node_spin,
+                }) = self.engine.arena.get_node(current)
                 {
-                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len() {
+                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len()
+                    {
                         for (pc, &nc) in pattern_children.iter().zip(node_children.iter()) {
                             self.traverse_pattern_matches(pc, nc, sub_pattern_counter, matches);
                         }
@@ -436,7 +444,9 @@ impl<'a> PrimitiveEvaluator<'a> {
             // Verify that no other active adjacency/edge in the arena refers to any deleted node,
             // unless that edge is also matched and consumed (is in matched_nodes).
             // We ignore sys::residue edges, as they are metadata history traces.
-            for id in 0..(self.engine.arena.len() as NodeId) {
+            // Since the arena is append-only and immutable, any active parent referring to our
+            // deleted nodes must have been allocated after root_id, so we only need to scan from root_id.
+            for id in root_id..(self.engine.arena.len() as NodeId) {
                 if !matched_nodes.contains(&id) && !self.is_residue_edge(id) {
                     if let Some(topo) = self.engine.arena.get_node(id) {
                         match topo {
@@ -508,10 +518,17 @@ impl<'a> PrimitiveEvaluator<'a> {
                     false
                 }
             }
-            Pattern::Membrane { children: pattern_children, spin: pattern_spin } => {
-                if let Some(Topology::Membrane { children: node_children, spin: node_spin }) = self.engine.arena.get_node(current)
+            Pattern::Membrane {
+                children: pattern_children,
+                spin: pattern_spin,
+            } => {
+                if let Some(Topology::Membrane {
+                    children: node_children,
+                    spin: node_spin,
+                }) = self.engine.arena.get_node(current)
                 {
-                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len() {
+                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len()
+                    {
                         node_children
                             .iter()
                             .zip(pattern_children.iter())
@@ -548,12 +565,18 @@ impl<'a> PrimitiveEvaluator<'a> {
                 }
                 Ok(self.engine.intern(Topology::Adjacency(children)))
             }
-            Pattern::Membrane { children: pattern_children, spin } => {
+            Pattern::Membrane {
+                children: pattern_children,
+                spin,
+            } => {
                 let mut children = Vec::with_capacity(pattern_children.len());
                 for pc in pattern_children {
                     children.push(self.inject_subgraph(pc, bindings)?);
                 }
-                Ok(self.engine.intern(Topology::Membrane { children, spin: *spin }))
+                Ok(self.engine.intern(Topology::Membrane {
+                    children,
+                    spin: *spin,
+                }))
             }
         }
     }
@@ -781,6 +804,44 @@ mod tests {
         color_values2.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
 
         // The multiset of computed colors must match exactly across the isomorphic subgraphs
+        assert_eq!(color_values1, color_values2);
+    }
+
+    #[test]
+    fn test_gfp_cycle_termination_on_cyclic_structures() {
+        // Prepare Engine 1 with cyclic reference:
+        // adj1 (index 1) refers back to itself via vec![a1, 1]
+        let mut engine1 = IdentityEngine::new();
+        let a1 = engine1.arena.allocate_raw(Topology::Atom(b"A".to_vec()));
+        let adj1 = engine1.arena.allocate_raw(Topology::Adjacency(vec![a1, 1]));
+        assert_eq!(adj1, 1);
+
+        engine1.id_to_hash.push(blake3::hash(b"ATOM_A"));
+        engine1.id_to_hash.push(blake3::hash(b"ADJ_CYCLE"));
+
+        let subgraph1 = vec![a1, adj1];
+        let colors1 = engine1.compute_wl_colorings(&subgraph1, 4);
+
+        // Prepare Engine 2 with identical cyclic reference but different base values
+        let mut engine2 = IdentityEngine::new();
+        let a2 = engine2.arena.allocate_raw(Topology::Atom(b"A".to_vec()));
+        let adj2 = engine2.arena.allocate_raw(Topology::Adjacency(vec![a2, 1]));
+        assert_eq!(adj2, 1);
+
+        engine2.id_to_hash.push(blake3::hash(b"ATOM_A"));
+        engine2.id_to_hash.push(blake3::hash(b"ADJ_CYCLE"));
+
+        let subgraph2 = vec![a2, adj2];
+        let colors2 = engine2.compute_wl_colorings(&subgraph2, 4);
+
+        // Map colors1 values and colors2 values to sorted vectors of hashes
+        let mut color_values1: Vec<Hash> = colors1.values().cloned().collect();
+        let mut color_values2: Vec<Hash> = colors2.values().cloned().collect();
+
+        color_values1.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+        color_values2.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+        // Non-well-founded cyclic structures must stabilize and yield identical canonical color sets
         assert_eq!(color_values1, color_values2);
     }
 }
