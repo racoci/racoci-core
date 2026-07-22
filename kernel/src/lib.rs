@@ -29,7 +29,8 @@ pub enum Topology {
     Adjacency(Vec<NodeId>),
 
     /// Grouping Membranes: Isolated topological scopes/boundaries enclosing subgraphs.
-    Membrane(Vec<NodeId>),
+    /// Includes a spin orientation (+1 for standard, -1 for inverted/non-orientable).
+    Membrane { children: Vec<NodeId>, spin: i8 },
 }
 
 /// Contiguous, flat memory arena allocator that packs all nodes
@@ -130,13 +131,23 @@ impl IdentityEngine {
                 hasher.update(b"ATOM");
                 hasher.update(data);
             }
-            Topology::Adjacency(children) | Topology::Membrane(children) => {
-                let prefix = if matches!(topo, Topology::Adjacency(_)) {
-                    b"ADJ"
-                } else {
-                    b"MEM"
-                };
-                hasher.update(prefix);
+            Topology::Adjacency(children) => {
+                hasher.update(b"ADJ");
+
+                // Fetch child hashes from our index
+                let mut child_hashes: Vec<Hash> =
+                    children.iter().map(|&id| self.get_hash_by_id(id)).collect();
+
+                // Sort child hashes unstably to guarantee canonical isomorphism
+                child_hashes.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+                for ch in child_hashes {
+                    hasher.update(ch.as_bytes());
+                }
+            }
+            Topology::Membrane { children, spin } => {
+                hasher.update(b"MEM");
+                hasher.update(&[*spin as u8]);
 
                 // Fetch child hashes from our index
                 let mut child_hashes: Vec<Hash> =
@@ -191,7 +202,7 @@ impl IdentityEngine {
                 if let Some(topo) = self.arena.get_node(v) {
                     match topo {
                         Topology::Atom(_) => {}
-                        Topology::Adjacency(children) | Topology::Membrane(children) => {
+                        Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
                             for &child in children {
                                 if subgraph.contains(&child) {
                                     neighbor_colors.push(colors[&child]);
@@ -209,7 +220,7 @@ impl IdentityEngine {
                         if let Some(topo) = self.arena.get_node(parent) {
                             match topo {
                                 Topology::Atom(_) => {}
-                                Topology::Adjacency(children) | Topology::Membrane(children) => {
+                                Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
                                     if children.contains(&v) {
                                         neighbor_colors.push(colors[&parent]);
                                     }
@@ -255,7 +266,8 @@ pub enum Pattern {
     Adjacency(Vec<Pattern>),
 
     /// Matches a Membrane structure where children are matched by nested sub-patterns.
-    Membrane(Vec<Pattern>),
+    /// Includes the expected spin orientation.
+    Membrane { children: Vec<Pattern>, spin: i8 },
 }
 
 /// Represents variable bindings captured during the Left-Hand Side (LHS) match phase.
@@ -301,10 +313,10 @@ impl<'a> PrimitiveEvaluator<'a> {
                     }
                 }
             }
-            Pattern::Membrane(pattern_children) => {
-                if let Some(Topology::Membrane(node_children)) = self.engine.arena.get_node(current)
+            Pattern::Membrane { children: pattern_children, spin: pattern_spin } => {
+                if let Some(Topology::Membrane { children: node_children, spin: node_spin }) = self.engine.arena.get_node(current)
                 {
-                    if node_children.len() == pattern_children.len() {
+                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len() {
                         for (pc, &nc) in pattern_children.iter().zip(node_children.iter()) {
                             self.traverse_pattern_matches(pc, nc, sub_pattern_counter, matches);
                         }
@@ -323,7 +335,12 @@ impl<'a> PrimitiveEvaluator<'a> {
                 }
             }
             Pattern::Atom(_) => {}
-            Pattern::Adjacency(children) | Pattern::Membrane(children) => {
+            Pattern::Adjacency(children) => {
+                for child in children {
+                    self.collect_variables(child, vars);
+                }
+            }
+            Pattern::Membrane { children, .. } => {
                 for child in children {
                     self.collect_variables(child, vars);
                 }
@@ -424,7 +441,7 @@ impl<'a> PrimitiveEvaluator<'a> {
                     if let Some(topo) = self.engine.arena.get_node(id) {
                         match topo {
                             Topology::Atom(_) => {}
-                            Topology::Adjacency(children) | Topology::Membrane(children) => {
+                            Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
                                 for &child in children {
                                     if deleted_nodes.contains(&child) {
                                         return Err(
@@ -491,10 +508,10 @@ impl<'a> PrimitiveEvaluator<'a> {
                     false
                 }
             }
-            Pattern::Membrane(pattern_children) => {
-                if let Some(Topology::Membrane(node_children)) = self.engine.arena.get_node(current)
+            Pattern::Membrane { children: pattern_children, spin: pattern_spin } => {
+                if let Some(Topology::Membrane { children: node_children, spin: node_spin }) = self.engine.arena.get_node(current)
                 {
-                    if node_children.len() == pattern_children.len() {
+                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len() {
                         node_children
                             .iter()
                             .zip(pattern_children.iter())
@@ -531,12 +548,12 @@ impl<'a> PrimitiveEvaluator<'a> {
                 }
                 Ok(self.engine.intern(Topology::Adjacency(children)))
             }
-            Pattern::Membrane(pattern_children) => {
+            Pattern::Membrane { children: pattern_children, spin } => {
                 let mut children = Vec::with_capacity(pattern_children.len());
                 for pc in pattern_children {
                     children.push(self.inject_subgraph(pc, bindings)?);
                 }
-                Ok(self.engine.intern(Topology::Membrane(children)))
+                Ok(self.engine.intern(Topology::Membrane { children, spin: *spin }))
             }
         }
     }
