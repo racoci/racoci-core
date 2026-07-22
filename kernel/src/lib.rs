@@ -157,6 +157,83 @@ impl IdentityEngine {
     pub fn get_hash_by_id(&self, id: NodeId) -> Hash {
         self.id_to_hash[id as usize]
     }
+
+    /// Computes refined Weisfeiler-Lehman (WL) topological colorings over a subgraph neighborhood.
+    /// This iteratively refines node signatures based on neighbor multisets, guaranteeing
+    /// that isomorphic subgraphs yield identical canonical color partitions.
+    pub fn compute_wl_colorings(
+        &self,
+        subgraph: &[NodeId],
+        iterations: usize,
+    ) -> BTreeMap<NodeId, Hash> {
+        let mut colors = BTreeMap::new();
+
+        // Step 1: Initialize colors with each node's base interning hash
+        for &id in subgraph {
+            colors.insert(id, self.get_hash_by_id(id));
+        }
+
+        // Step 2: Iteratively refine colorings
+        for _ in 0..iterations {
+            let mut new_colors = BTreeMap::new();
+
+            for &v in subgraph {
+                let mut hasher = blake3::Hasher::new();
+
+                // Hash current color of node v
+                let current_color = colors[&v];
+                hasher.update(current_color.as_bytes());
+
+                // Collect neighbor colors (children and parent adjacencies)
+                let mut neighbor_colors = Vec::new();
+
+                // If node v is an Adjacency or Membrane, collect colors of its children
+                if let Some(topo) = self.arena.get_node(v) {
+                    match topo {
+                        Topology::Atom(_) => {}
+                        Topology::Adjacency(children) | Topology::Membrane(children) => {
+                            for &child in children {
+                                if subgraph.contains(&child) {
+                                    neighbor_colors.push(colors[&child]);
+                                } else {
+                                    neighbor_colors.push(self.get_hash_by_id(child));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Also find parent adjacencies/membranes enclosing v inside the subgraph
+                for &parent in subgraph {
+                    if parent != v {
+                        if let Some(topo) = self.arena.get_node(parent) {
+                            match topo {
+                                Topology::Atom(_) => {}
+                                Topology::Adjacency(children) | Topology::Membrane(children) => {
+                                    if children.contains(&v) {
+                                        neighbor_colors.push(colors[&parent]);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Sibling sorting: Sort neighbor colors to form a canonical multiset representation
+                neighbor_colors.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+                for nc in neighbor_colors {
+                    hasher.update(nc.as_bytes());
+                }
+
+                new_colors.insert(v, hasher.finalize());
+            }
+
+            colors = new_colors;
+        }
+
+        colors
+    }
 }
 
 impl Default for IdentityEngine {
@@ -651,5 +728,42 @@ mod tests {
         let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
 
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_wl_color_refinement_isomorphism() {
+        // Create Engine 1 with Graph: Adjacency( A, Adjacency(B, C) )
+        let mut engine1 = IdentityEngine::new();
+        let a1 = engine1.intern(Topology::Atom(b"A".to_vec()));
+        let b1 = engine1.intern(Topology::Atom(b"B".to_vec()));
+        let c1 = engine1.intern(Topology::Atom(b"C".to_vec()));
+        let bc1 = engine1.intern(Topology::Adjacency(vec![b1, c1]));
+        let root1 = engine1.intern(Topology::Adjacency(vec![a1, bc1]));
+
+        let subgraph1 = vec![a1, b1, c1, bc1, root1];
+        let colors1 = engine1.compute_wl_colorings(&subgraph1, 3);
+
+        // Create Engine 2 with identical structure but allocated in reverse order
+        // to verify that identity is purely structural and invariant to allocation sequence.
+        let mut engine2 = IdentityEngine::new();
+        let c2 = engine2.intern(Topology::Atom(b"C".to_vec()));
+        let b2 = engine2.intern(Topology::Atom(b"B".to_vec()));
+        let a2 = engine2.intern(Topology::Atom(b"A".to_vec()));
+        // Note that we intern [c2, b2], which is isomorphic to [b1, c1] due to stable sorting
+        let cb2 = engine2.intern(Topology::Adjacency(vec![c2, b2]));
+        let root2 = engine2.intern(Topology::Adjacency(vec![cb2, a2]));
+
+        let subgraph2 = vec![a2, b2, c2, cb2, root2];
+        let colors2 = engine2.compute_wl_colorings(&subgraph2, 3);
+
+        // Map colors1 values and colors2 values to sorted vectors of hashes
+        let mut color_values1: Vec<Hash> = colors1.values().cloned().collect();
+        let mut color_values2: Vec<Hash> = colors2.values().cloned().collect();
+
+        color_values1.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+        color_values2.sort_unstable_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+        // The multiset of computed colors must match exactly across the isomorphic subgraphs
+        assert_eq!(color_values1, color_values2);
     }
 }
