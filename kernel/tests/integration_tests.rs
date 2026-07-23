@@ -1,3 +1,4 @@
+#![allow(clippy::collapsible_if, clippy::needless_borrow)]
 use kernel::{BindingMap, IdentityEngine, NodeId, Pattern, PrimitiveEvaluator, Topology};
 
 /// Helper function to traverse a sys::residue causal list backwards,
@@ -296,4 +297,39 @@ fn test_end_to_end_fr4_non_well_founded_self_reference_membranes() {
     };
     let mut bindings_invalid = BindingMap::new();
     assert!(!evaluator.match_subgraph(m1, &rule_l_invalid, &mut bindings_invalid));
+}
+
+#[test]
+fn test_end_to_end_parser_via_recursive_dpo_rewriting() {
+    let mut engine = IdentityEngine::new();
+
+    // 1. Direct parsing: Parse "a b c" directly into the arena
+    let direct_parsed_node = kernel::parser::parse_h_cypher("a b c", &mut engine).unwrap();
+
+    // 2. DPO parsing: Parse "a b c" via progressive DPO rewriting over a token chain
+    let dpo_parsed_node = kernel::parser::parse_via_dpo("a b c", &mut engine).unwrap();
+
+    // 3. Verify isomorphic equivalence: Both methods must resolve to the exact same physical NodeId
+    // since the interning engine guarantees absolute, canonical structural identity!
+    assert_eq!(direct_parsed_node, dpo_parsed_node);
+
+    // Double check the topology is indeed a quaternary Adjacency with op::juxtapose tag
+    let final_node = engine.arena.get_node(dpo_parsed_node).unwrap();
+    if let Topology::Adjacency(children) = final_node {
+        assert_eq!(children.len(), 4);
+
+        let op_tag = engine.arena.get_node(children[0]).unwrap();
+        assert_eq!(op_tag, &Topology::Atom(b"op::juxtapose".to_vec()));
+
+        let a = engine.arena.get_node(children[1]).unwrap();
+        assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+
+        let b = engine.arena.get_node(children[2]).unwrap();
+        assert_eq!(b, &Topology::Atom(b"b".to_vec()));
+
+        let c = engine.arena.get_node(children[3]).unwrap();
+        assert_eq!(c, &Topology::Atom(b"c".to_vec()));
+    } else {
+        panic!("Expected Adjacency topology for parsed root");
+    }
 }

@@ -5,6 +5,7 @@
 //! absolute interning identity (H_id), and Double Pushout (DPO) rewriting.
 
 #![cfg_attr(not(test), no_std)]
+#![allow(clippy::collapsible_if)]
 
 extern crate alloc;
 
@@ -13,6 +14,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use blake3::Hash;
+
+pub mod parser;
 
 /// The unique identifier of a node in the Hypergraph Arena.
 /// Using a 32-bit index provides a compact, relative pointer representation
@@ -843,5 +846,76 @@ mod tests {
 
         // Non-well-founded cyclic structures must stabilize and yield identical canonical color sets
         assert_eq!(color_values1, color_values2);
+    }
+
+    #[test]
+    fn test_syntax_to_topology_mapping() {
+        let mut engine = IdentityEngine::new();
+
+        // 1. Whitespace Juxtaposition (juxtapose tag + 3 elements = quaternary Adjacency)
+        let root = parser::parse_h_cypher("a b c", &mut engine).unwrap();
+        let node = engine.arena.get_node(root).unwrap();
+
+        if let Topology::Adjacency(children) = node {
+            assert_eq!(
+                children.len(),
+                4,
+                "Must be a quaternary Adjacency (juxtapose operator + 3 elements)"
+            );
+
+            // Check op::juxtapose tag
+            let tag = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(tag, &Topology::Atom(b"op::juxtapose".to_vec()));
+
+            // Check children
+            let a = engine.arena.get_node(children[1]).unwrap();
+            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+
+            let b = engine.arena.get_node(children[2]).unwrap();
+            assert_eq!(b, &Topology::Atom(b"b".to_vec()));
+
+            let c = engine.arena.get_node(children[3]).unwrap();
+            assert_eq!(c, &Topology::Atom(b"c".to_vec()));
+        } else {
+            panic!("Expected Adjacency topology");
+        }
+
+        // 2. Curly Braces Scope (Membrane, spin: 1)
+        let root_braces = parser::parse_h_cypher("{ a b c }", &mut engine).unwrap();
+        let node_braces = engine.arena.get_node(root_braces).unwrap();
+
+        if let Topology::Membrane { children, spin } = node_braces {
+            assert_eq!(*spin, 1);
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected Membrane topology for braces");
+        }
+
+        // 3. Square Brackets Scope (Membrane, spin: -1)
+        let root_brackets = parser::parse_h_cypher("[ a b c ]", &mut engine).unwrap();
+        let node_brackets = engine.arena.get_node(root_brackets).unwrap();
+
+        if let Topology::Membrane { children, spin } = node_brackets {
+            assert_eq!(*spin, -1);
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected Membrane topology for brackets");
+        }
+
+        // 4. Parentheses (Adjacency without juxtapose tag)
+        let root_parens = parser::parse_h_cypher("( a b c )", &mut engine).unwrap();
+        let node_parens = engine.arena.get_node(root_parens).unwrap();
+
+        if let Topology::Adjacency(children) = node_parens {
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected direct Adjacency topology for parens");
+        }
     }
 }
