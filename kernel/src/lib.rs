@@ -40,38 +40,39 @@ pub enum Topology {
 /// sequentially to optimize cache-line locality and eliminate pointer chasing.
 pub struct HypergraphArena {
     /// Contiguous storage for all topologies.
-    nodes: Vec<Topology>,
+    nodes: spin::RwLock<Vec<Topology>>,
 }
 
 impl HypergraphArena {
     /// Instantiates a new contiguous Hypergraph Arena with pre-allocated capacity.
     pub fn new() -> Self {
         Self {
-            nodes: Vec::with_capacity(1_000_000),
+            nodes: spin::RwLock::new(Vec::with_capacity(1_000_000)),
         }
     }
 
     /// Internal raw allocation method. Bypasses identity pool checks.
     /// Restricted for internal use by the IdentityEngine.
-    pub fn allocate_raw(&mut self, topo: Topology) -> NodeId {
-        let id = self.nodes.len() as NodeId;
-        self.nodes.push(topo);
+    pub fn allocate_raw(&self, topo: Topology) -> NodeId {
+        let mut nodes = self.nodes.write();
+        let id = nodes.len() as NodeId;
+        nodes.push(topo);
         id
     }
 
     /// Retrieves a reference to a topology given its NodeId index.
-    pub fn get_node(&self, id: NodeId) -> Option<&Topology> {
-        self.nodes.get(id as usize)
+    pub fn get_node(&self, id: NodeId) -> Option<Topology> {
+        self.nodes.read().get(id as usize).cloned()
     }
 
     /// Returns the total number of nodes allocated in the arena.
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.nodes.read().len()
     }
 
     /// Checks if the arena is empty.
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        self.nodes.read().is_empty()
     }
 }
 
@@ -88,10 +89,10 @@ pub struct IdentityEngine {
     pub arena: HypergraphArena,
 
     /// Interning pool mapping exact cryptographic hashes (H_id as [u8; 32]) to NodeId.
-    pub intern_pool: BTreeMap<[u8; 32], NodeId>,
+    pub intern_pool: spin::RwLock<BTreeMap<[u8; 32], NodeId>>,
 
     /// Parallel index array for constant-time (O(1)) lookup of a node's hash.
-    pub id_to_hash: Vec<Hash>,
+    pub id_to_hash: spin::RwLock<Vec<Hash>>,
 }
 
 impl IdentityEngine {
@@ -99,27 +100,38 @@ impl IdentityEngine {
     pub fn new() -> Self {
         Self {
             arena: HypergraphArena::new(),
-            intern_pool: BTreeMap::new(),
-            id_to_hash: Vec::with_capacity(1_000_000),
+            intern_pool: spin::RwLock::new(BTreeMap::new()),
+            id_to_hash: spin::RwLock::new(Vec::with_capacity(1_000_000)),
         }
     }
 
     /// Interns a topology into the substrate. If an isomorphic topology
     /// with an identical hash already exists, the existing NodeId is returned.
     /// Otherwise, a new node is allocated and its hash is indexed.
-    pub fn intern(&mut self, topo: Topology) -> NodeId {
+    pub fn intern(&self, topo: Topology) -> NodeId {
         let hash = self.compute_hash(&topo);
         let hash_bytes = *hash.as_bytes();
 
-        // O(1) Deduplication: reuse existing node pointer if matching hash exists
-        if let Some(&existing_id) = self.intern_pool.get(&hash_bytes) {
+        // Fast path: check under read lock
+        {
+            let pool = self.intern_pool.read();
+            if let Some(&existing_id) = pool.get(&hash_bytes) {
+                return existing_id;
+            }
+        }
+
+        // Slow path: acquire write lock on intern_pool to ensure mutual exclusion
+        let mut pool = self.intern_pool.write();
+
+        // Double-check under write lock in case another thread inserted it
+        if let Some(&existing_id) = pool.get(&hash_bytes) {
             return existing_id;
         }
 
         // Otherwise, allocate a new raw node
         let new_id = self.arena.allocate_raw(topo);
-        self.intern_pool.insert(hash_bytes, new_id);
-        self.id_to_hash.push(hash);
+        pool.insert(hash_bytes, new_id);
+        self.id_to_hash.write().push(hash);
 
         new_id
     }
@@ -169,7 +181,7 @@ impl IdentityEngine {
 
     /// Performs a constant-time lookup of a node's hash given its NodeId.
     pub fn get_hash_by_id(&self, id: NodeId) -> Hash {
-        self.id_to_hash[id as usize]
+        self.id_to_hash.read()[id as usize]
     }
 
     /// Computes refined Weisfeiler-Lehman (WL) topological colorings over a subgraph neighborhood.
@@ -206,7 +218,7 @@ impl IdentityEngine {
                     match topo {
                         Topology::Atom(_) => {}
                         Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
-                            for &child in children {
+                            for &child in &children {
                                 if subgraph.contains(&child) {
                                     neighbor_colors.push(colors[&child]);
                                 } else {
@@ -280,13 +292,13 @@ pub type BindingMap = BTreeMap<String, NodeId>;
 /// The execution loop and primitive evaluator of Holds.
 /// Performs localized subgraph isomorphism matching and Double Pushout (DPO) substitution.
 pub struct PrimitiveEvaluator<'a> {
-    /// Mutable reference to the identity interning engine.
-    pub engine: &'a mut IdentityEngine,
+    /// Reference to the identity interning engine.
+    pub engine: &'a IdentityEngine,
 }
 
 impl<'a> PrimitiveEvaluator<'a> {
     /// Instantiates a new Primitive Evaluator on top of an Identity Engine.
-    pub fn new(engine: &'a mut IdentityEngine) -> Self {
+    pub fn new(engine: &'a IdentityEngine) -> Self {
         Self { engine }
     }
 
@@ -326,8 +338,7 @@ impl<'a> PrimitiveEvaluator<'a> {
                     spin: node_spin,
                 }) = self.engine.arena.get_node(current)
                 {
-                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len()
-                    {
+                    if *pattern_spin == node_spin && node_children.len() == pattern_children.len() {
                         for (pc, &nc) in pattern_children.iter().zip(node_children.iter()) {
                             self.traverse_pattern_matches(pc, nc, sub_pattern_counter, matches);
                         }
@@ -455,7 +466,7 @@ impl<'a> PrimitiveEvaluator<'a> {
                         match topo {
                             Topology::Atom(_) => {}
                             Topology::Adjacency(children) | Topology::Membrane { children, .. } => {
-                                for &child in children {
+                                for &child in &children {
                                     if deleted_nodes.contains(&child) {
                                         return Err(
                                             "Dangling edge condition violated: an active edge refers to a node slated for deletion, but that edge is not matched and consumed.",
@@ -500,7 +511,7 @@ impl<'a> PrimitiveEvaluator<'a> {
             }
             Pattern::Atom(pattern_data) => {
                 if let Some(Topology::Atom(node_data)) = self.engine.arena.get_node(current) {
-                    node_data == pattern_data
+                    node_data == *pattern_data
                 } else {
                     false
                 }
@@ -530,8 +541,7 @@ impl<'a> PrimitiveEvaluator<'a> {
                     spin: node_spin,
                 }) = self.engine.arena.get_node(current)
                 {
-                    if *pattern_spin == *node_spin && node_children.len() == pattern_children.len()
-                    {
+                    if *pattern_spin == node_spin && node_children.len() == pattern_children.len() {
                         node_children
                             .iter()
                             .zip(pattern_children.iter())
@@ -599,7 +609,7 @@ mod tests {
 
     #[test]
     fn test_core_primitives_and_interning() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Allocate Atoms
         let a1 = engine.intern(Topology::Atom(b"alpha".to_vec()));
@@ -620,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_localized_pattern_matching() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Prepare raw graph structure: Adjacency ( Atom("x"), Atom("y") )
         let x = engine.intern(Topology::Atom(b"x".to_vec()));
@@ -633,7 +643,7 @@ mod tests {
             Pattern::Atom(b"y".to_vec()),
         ]);
 
-        let evaluator = PrimitiveEvaluator::new(&mut engine);
+        let evaluator = PrimitiveEvaluator::new(&engine);
         let mut bindings = BindingMap::new();
 
         assert!(evaluator.match_subgraph(root, &pattern, &mut bindings));
@@ -642,7 +652,7 @@ mod tests {
 
     #[test]
     fn test_algebraic_rewriting_and_residue() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Setup base graph: Adjacency( Atom("expr"), Atom("0") )
         let expr = engine.intern(Topology::Atom(b"expr_val".to_vec()));
@@ -658,7 +668,7 @@ mod tests {
         ]);
         let rule_r = Pattern::Variable("val".to_string());
 
-        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let mut evaluator = PrimitiveEvaluator::new(&engine);
 
         // Execute the DPO Rewrite
         let new_root = evaluator.evaluate_rewrite(root, &rule_l, &rule_r).unwrap();
@@ -677,7 +687,7 @@ mod tests {
 
             // Third link must be the "sys::residue" tag
             let tag = evaluator.engine.arena.get_node(links[2]).unwrap();
-            assert_eq!(tag, &Topology::Atom(b"sys::residue".to_vec()));
+            assert_eq!(tag, Topology::Atom(b"sys::residue".to_vec()));
         } else {
             panic!("Residue causal link not found!");
         }
@@ -685,7 +695,7 @@ mod tests {
 
     #[test]
     fn test_dangling_edge_condition_validation() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Prepare raw graph structure:
         // Node 0: Atom("x")
@@ -708,7 +718,7 @@ mod tests {
         ]);
         let rule_r = Pattern::Variable("a".to_string());
 
-        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let mut evaluator = PrimitiveEvaluator::new(&engine);
         let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
 
         assert!(res.is_err());
@@ -720,7 +730,7 @@ mod tests {
 
     #[test]
     fn test_identification_condition_validation() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Prepare raw graph structure with duplicate references:
         let x = engine.intern(Topology::Atom(b"x".to_vec()));
@@ -736,7 +746,7 @@ mod tests {
         ]);
         let rule_r = Pattern::Atom(b"new_node".to_vec());
 
-        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let mut evaluator = PrimitiveEvaluator::new(&engine);
         let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
 
         assert!(res.is_err());
@@ -748,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_identification_condition_satisfied_when_preserved() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // Prepare raw graph structure with duplicate references:
         let x = engine.intern(Topology::Atom(b"x".to_vec()));
@@ -767,7 +777,7 @@ mod tests {
             Pattern::Variable("b".to_string()),
         ]);
 
-        let mut evaluator = PrimitiveEvaluator::new(&mut engine);
+        let mut evaluator = PrimitiveEvaluator::new(&engine);
         let res = evaluator.evaluate_rewrite(root, &rule_l, &rule_r);
 
         assert!(res.is_ok());
@@ -776,7 +786,7 @@ mod tests {
     #[test]
     fn test_wl_color_refinement_isomorphism() {
         // Create Engine 1 with Graph: Adjacency( A, Adjacency(B, C) )
-        let mut engine1 = IdentityEngine::new();
+        let engine1 = IdentityEngine::new();
         let a1 = engine1.intern(Topology::Atom(b"A".to_vec()));
         let b1 = engine1.intern(Topology::Atom(b"B".to_vec()));
         let c1 = engine1.intern(Topology::Atom(b"C".to_vec()));
@@ -788,7 +798,7 @@ mod tests {
 
         // Create Engine 2 with identical structure but allocated in reverse order
         // to verify that identity is purely structural and invariant to allocation sequence.
-        let mut engine2 = IdentityEngine::new();
+        let engine2 = IdentityEngine::new();
         let c2 = engine2.intern(Topology::Atom(b"C".to_vec()));
         let b2 = engine2.intern(Topology::Atom(b"B".to_vec()));
         let a2 = engine2.intern(Topology::Atom(b"A".to_vec()));
@@ -814,25 +824,25 @@ mod tests {
     fn test_gfp_cycle_termination_on_cyclic_structures() {
         // Prepare Engine 1 with cyclic reference:
         // adj1 (index 1) refers back to itself via vec![a1, 1]
-        let mut engine1 = IdentityEngine::new();
+        let engine1 = IdentityEngine::new();
         let a1 = engine1.arena.allocate_raw(Topology::Atom(b"A".to_vec()));
         let adj1 = engine1.arena.allocate_raw(Topology::Adjacency(vec![a1, 1]));
         assert_eq!(adj1, 1);
 
-        engine1.id_to_hash.push(blake3::hash(b"ATOM_A"));
-        engine1.id_to_hash.push(blake3::hash(b"ADJ_CYCLE"));
+        engine1.id_to_hash.write().push(blake3::hash(b"ATOM_A"));
+        engine1.id_to_hash.write().push(blake3::hash(b"ADJ_CYCLE"));
 
         let subgraph1 = vec![a1, adj1];
         let colors1 = engine1.compute_wl_colorings(&subgraph1, 4);
 
         // Prepare Engine 2 with identical cyclic reference but different base values
-        let mut engine2 = IdentityEngine::new();
+        let engine2 = IdentityEngine::new();
         let a2 = engine2.arena.allocate_raw(Topology::Atom(b"A".to_vec()));
         let adj2 = engine2.arena.allocate_raw(Topology::Adjacency(vec![a2, 1]));
         assert_eq!(adj2, 1);
 
-        engine2.id_to_hash.push(blake3::hash(b"ATOM_A"));
-        engine2.id_to_hash.push(blake3::hash(b"ADJ_CYCLE"));
+        engine2.id_to_hash.write().push(blake3::hash(b"ATOM_A"));
+        engine2.id_to_hash.write().push(blake3::hash(b"ADJ_CYCLE"));
 
         let subgraph2 = vec![a2, adj2];
         let colors2 = engine2.compute_wl_colorings(&subgraph2, 4);
@@ -850,10 +860,10 @@ mod tests {
 
     #[test]
     fn test_syntax_to_topology_mapping() {
-        let mut engine = IdentityEngine::new();
+        let engine = IdentityEngine::new();
 
         // 1. Whitespace Juxtaposition (juxtapose tag + 3 elements = quaternary Adjacency)
-        let root = parser::parse_h_cypher("a b c", &mut engine).unwrap();
+        let root = parser::parse_h_cypher("a b c", &engine).unwrap();
         let node = engine.arena.get_node(root).unwrap();
 
         if let Topology::Adjacency(children) = node {
@@ -865,55 +875,55 @@ mod tests {
 
             // Check op::juxtapose tag
             let tag = engine.arena.get_node(children[0]).unwrap();
-            assert_eq!(tag, &Topology::Atom(b"op::juxtapose".to_vec()));
+            assert_eq!(tag, Topology::Atom(b"op::juxtapose".to_vec()));
 
             // Check children
             let a = engine.arena.get_node(children[1]).unwrap();
-            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
 
             let b = engine.arena.get_node(children[2]).unwrap();
-            assert_eq!(b, &Topology::Atom(b"b".to_vec()));
+            assert_eq!(b, Topology::Atom(b"b".to_vec()));
 
             let c = engine.arena.get_node(children[3]).unwrap();
-            assert_eq!(c, &Topology::Atom(b"c".to_vec()));
+            assert_eq!(c, Topology::Atom(b"c".to_vec()));
         } else {
             panic!("Expected Adjacency topology");
         }
 
         // 2. Curly Braces Scope (Membrane, spin: 1)
-        let root_braces = parser::parse_h_cypher("{ a b c }", &mut engine).unwrap();
+        let root_braces = parser::parse_h_cypher("{ a b c }", &engine).unwrap();
         let node_braces = engine.arena.get_node(root_braces).unwrap();
 
         if let Topology::Membrane { children, spin } = node_braces {
-            assert_eq!(*spin, 1);
+            assert_eq!(spin, 1);
             assert_eq!(children.len(), 3);
             let a = engine.arena.get_node(children[0]).unwrap();
-            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
         } else {
             panic!("Expected Membrane topology for braces");
         }
 
         // 3. Square Brackets Scope (Membrane, spin: -1)
-        let root_brackets = parser::parse_h_cypher("[ a b c ]", &mut engine).unwrap();
+        let root_brackets = parser::parse_h_cypher("[ a b c ]", &engine).unwrap();
         let node_brackets = engine.arena.get_node(root_brackets).unwrap();
 
         if let Topology::Membrane { children, spin } = node_brackets {
-            assert_eq!(*spin, -1);
+            assert_eq!(spin, -1);
             assert_eq!(children.len(), 3);
             let a = engine.arena.get_node(children[0]).unwrap();
-            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
         } else {
             panic!("Expected Membrane topology for brackets");
         }
 
         // 4. Parentheses (Adjacency without juxtapose tag)
-        let root_parens = parser::parse_h_cypher("( a b c )", &mut engine).unwrap();
+        let root_parens = parser::parse_h_cypher("( a b c )", &engine).unwrap();
         let node_parens = engine.arena.get_node(root_parens).unwrap();
 
         if let Topology::Adjacency(children) = node_parens {
             assert_eq!(children.len(), 3);
             let a = engine.arena.get_node(children[0]).unwrap();
-            assert_eq!(a, &Topology::Atom(b"a".to_vec()));
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
         } else {
             panic!("Expected direct Adjacency topology for parens");
         }

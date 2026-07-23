@@ -47,12 +47,12 @@ pub fn tokenize(input: &str) -> Vec<String> {
 pub struct Parser<'a> {
     tokens: Vec<String>,
     index: usize,
-    engine: &'a mut IdentityEngine,
+    engine: &'a IdentityEngine,
 }
 
 impl<'a> Parser<'a> {
     /// Instantiates a new Parser over a token stream and Identity Engine.
-    pub fn new(tokens: Vec<String>, engine: &'a mut IdentityEngine) -> Self {
+    pub fn new(tokens: Vec<String>, engine: &'a IdentityEngine) -> Self {
         Self {
             tokens,
             index: 0,
@@ -155,7 +155,7 @@ impl<'a> Parser<'a> {
 }
 
 /// Parses an H-Cypher script directly into the contiguous Holds memory arena.
-pub fn parse_h_cypher(input: &str, engine: &mut IdentityEngine) -> Result<NodeId, &'static str> {
+pub fn parse_h_cypher(input: &str, engine: &IdentityEngine) -> Result<NodeId, &'static str> {
     let tokens = tokenize(input);
     if tokens.is_empty() {
         return Err("Empty input script");
@@ -167,7 +167,7 @@ pub fn parse_h_cypher(input: &str, engine: &mut IdentityEngine) -> Result<NodeId
 /// Builds a linear linked token-chain adjacency in the arena representing a sequence of character tokens.
 /// For tokens ["a", "b", "c"], produces:
 /// Adjacency([ Atom("a"), Adjacency([ Atom("b"), Adjacency([ Atom("c"), Atom("sys::eos") ]) ]) ])
-pub fn build_token_chain(tokens: &[String], engine: &mut IdentityEngine) -> NodeId {
+pub fn build_token_chain(tokens: &[String], engine: &IdentityEngine) -> NodeId {
     let mut current = engine.intern(Topology::Atom(b"sys::eos".to_vec()));
     for token in tokens.iter().rev() {
         let token_node = engine.intern(Topology::Atom(token.clone().into_bytes()));
@@ -178,7 +178,7 @@ pub fn build_token_chain(tokens: &[String], engine: &mut IdentityEngine) -> Node
 
 /// Demonstrates parsing an H-Cypher token chain recursively using a sequence of DPO rewrite rules.
 /// For a 3-word token chain, this evaluates a DPO rule transforming it into a quaternary Adjacency.
-pub fn parse_via_dpo(input: &str, engine: &mut IdentityEngine) -> Result<NodeId, &'static str> {
+pub fn parse_via_dpo(input: &str, engine: &IdentityEngine) -> Result<NodeId, &'static str> {
     let tokens = tokenize(input);
     if tokens.len() != 3 {
         return Err(
