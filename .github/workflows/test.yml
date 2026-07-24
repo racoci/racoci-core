@@ -1,0 +1,44 @@
+name: Holds Kernel CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Verify & Test Kernel
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            kernel
+
+      - name: Check Code Formatting
+        run: cargo fmt --all -- --check
+        working-directory: kernel
+
+      - name: Run Clippy Lints
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: kernel
+
+      - name: Verify WebAssembly Target Compilation
+        run: cargo check --target wasm32-unknown-unknown --release
+        working-directory: kernel
+
+      - name: Run Unit & E2E Integration Tests
+        run: cargo test
+        working-directory: kernel
