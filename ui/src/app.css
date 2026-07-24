@@ -1,0 +1,35 @@
+/* Clean styling reset for Holds Substrate Topology UI */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #0b0c10;
+  color: #c5c6c7;
+  overflow: hidden;
+  font-family: 'Fira Code', ui-monospace, monospace;
+}
+
+/* Custom cyber scrollbars for our panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d0e15;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f2833;
+  border-radius: 3px;
+  border: 1px solid #0d0e15;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #45a29e;
+}
