@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use blake3::Hash;
 
 pub mod parser;
+pub mod sync;
 
 /// The unique identifier of a node in the Hypergraph Arena.
 /// Using a 32-bit index provides a compact, relative pointer representation
@@ -926,6 +927,93 @@ mod tests {
             assert_eq!(a, Topology::Atom(b"a".to_vec()));
         } else {
             panic!("Expected direct Adjacency topology for parens");
+        }
+    }
+
+    #[test]
+    fn test_atomic_ring_buffer_concurrency() {
+        use crate::sync::{AtomicRingBuffer, DeltaEvent};
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::thread;
+
+        let queue = Arc::new(AtomicRingBuffer::new(1024));
+        let num_items = 50000;
+        let num_readers = 10;
+        let writer_done = Arc::new(AtomicBool::new(false));
+        let results = Arc::new(std::sync::Mutex::new(Vec::with_capacity(num_items)));
+
+        // Spawn readers
+        let mut readers = Vec::new();
+        for _ in 0..num_readers {
+            let queue = Arc::clone(&queue);
+            let results = Arc::clone(&results);
+            let writer_done = Arc::clone(&writer_done);
+            readers.push(thread::spawn(move || {
+                let mut local = Vec::new();
+                loop {
+                    if let Some(event) = queue.dequeue() {
+                        local.push(event);
+                    } else {
+                        if writer_done.load(Ordering::Acquire) && queue.is_empty() {
+                            if let Some(event) = queue.dequeue() {
+                                local.push(event);
+                                continue;
+                            }
+                            break;
+                        }
+                        thread::yield_now();
+                    }
+                }
+                let mut res = results.lock().unwrap();
+                res.extend(local);
+            }));
+        }
+
+        // Spawn writer
+        let queue_writer = Arc::clone(&queue);
+        let writer_done_writer = Arc::clone(&writer_done);
+        let writer = thread::spawn(move || {
+            for i in 0..num_items {
+                let event = DeltaEvent {
+                    timestamp: i as u64,
+                    target_membrane: (i % 5) as u32,
+                    old_hash: [i as u8; 32],
+                    new_hash: [(i + 1) as u8; 32],
+                    offset_diff: i as u32,
+                };
+                while queue_writer.enqueue(event).is_err() {
+                    thread::yield_now();
+                }
+            }
+            writer_done_writer.store(true, Ordering::Release);
+        });
+
+        // Wait for writer and readers to complete
+        writer.join().unwrap();
+        for r in readers {
+            r.join().unwrap();
+        }
+
+        let mut received = results.lock().unwrap().clone();
+        assert_eq!(
+            received.len(),
+            num_items,
+            "Should receive exactly the number of items written"
+        );
+
+        // Sort by timestamp and verify sequence integrity
+        received.sort_by_key(|e| e.timestamp);
+        for (i, event) in received.iter().enumerate() {
+            assert_eq!(
+                event.timestamp, i as u64,
+                "Sequence mismatch at index {}",
+                i
+            );
+            assert_eq!(event.target_membrane, (i % 5) as u32);
+            assert_eq!(event.old_hash, [i as u8; 32]);
+            assert_eq!(event.new_hash, [(i + 1) as u8; 32]);
+            assert_eq!(event.offset_diff, i as u32);
         }
     }
 }
