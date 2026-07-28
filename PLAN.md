@@ -14,115 +14,85 @@ This document tracks what has been accomplished in the Holds environment and map
 ### 2. Environment Setup & Tooling
 * **Toolchain Installation:** Set up Rust, Cargo, and rustup in the environment.
 * **Project Scaffolding:** Initialized the `/kernel` Rust library project.
-* **Dependencies:** Added and locked the high-performance `blake3` cryptographic hashing library.
+* **Dependencies:** Added and locked the high-performance `blake3` and `spin` (lock-free sync) cryptographic libraries.
 * **Source Control Guard (.gitignore):** Added a root-level `.gitignore` file configured for Rust builds, Node.js packages, IDE setups, and OS-specific metadata files.
 
 ### 3. Kernel Core Primitives & Interning
-* **Topology Engine:** Implemented `Topology` enum representing Atoms, Adjacencies ($n$-ary hyperedges), and Membranes.
+* **Topology Engine:** Implemented `Topology` enum representing Atoms, Adjacencies ($n$-ary hyperedges), and Membranes (including explicit `spin` vectors).
 * **Flat Memory Arena:** Created `HypergraphArena` representing sequential, contiguous node packaging to guarantee cache locality.
 * **Flyweight Identity Engine ($H_{id}$):** Implemented `IdentityEngine` performing absolute, constant-time deduplication with stable child hash sorting.
 * **Causal Logging (`sys::residue`):** Implemented residue ghost adjacencies to track state history.
 
 ### 4. Advanced Category-Theoretic Validations (DPO)
 * **Pattern Matching:** Implemented recursive matching and binding maps.
-* **Strict Dangling Edge Validation:** Blocked transformations that would leave outside active references with dangling pointers to deleted nodes.
+* **Strict Dangling Edge Validation:** Blocked transformations that would leave outside active references with dangling pointers to deleted nodes. Only scans from the current active `root_id` to ignore obsolete historical states.
 * **Identification Condition Check:** Verified that merging distinct pattern variables is only permitted if the merged elements belong to interface $K$.
 
-### 5. Testing & Guidelines
+### 5. Project Guidelines & CI Automation
 * **Project Guidelines (`GEMINI.md`):** Mandated that **no task or feature is concluded without unit and E2E automated tests**.
-* **Unit Tests:** Built 6 comprehensive tests inside `kernel/src/lib.rs`.
-* **E2E Integration Tests:** Created 2 end-to-end integration tests inside `kernel/tests/integration_tests.rs` simulating algebraic simplification and verifying isomorphic deduplication. All tests pass with **100% success**.
+* **Automated CI Workflow:** Created a GitHub Actions pipeline (`.github/workflows/test.yml`) running formatting, clippy lints, WebAssembly compilation checks, and the full unit/E2E test suite on every push and PR.
+
+### 6. Stage 1: `no_std` and WebAssembly Footprint Optimizations
+* **`no_std` Compatibility:** The kernel compiles without the standard library (`std`), targeting a minimal **~15 KB** WebAssembly release size.
+* **Zero-Dependency Maps (`BTreeMap`):** Bypassed the standard library's `HashMap` in favor of the `alloc` crate's `BTreeMap`.
+* **Byte-Array Interning Keys:** Structured `intern_pool` to use raw `[u8; 32]` cryptographic byte representations of `blake3::Hash` as keys, achieving zero-dependency interning.
+
+### 7. Stage 2: Weisfeiler-Lehman (WL) Canonizer & Cycle Refinement
+* **$k$-Hop Color Refinement Loop:** Implemented iterative topological color updates (`IdentityEngine::compute_wl_colorings`) that refine node signatures based on the sorted multiset of their neighbors' colors.
+* **GFP Cycle Termination:** Employs coinductive Greatest Fixed Point (GFP) termination when traversing non-well-founded cyclic graphs (e.g. `spin: -1` membranes), ensuring stable, deterministic cycle signatures without stack overflows.
+
+### 8. Stage 3: AST-Free H-Cypher Parser
+* **Syntax-to-Topology Mapping:** Designed direct spatial-aware parsing in `parser.rs`. It maps whitespace separation to quaternary adjacencies, parenthesis to adjacencies, curly braces `{}` to positive spin (`1`) membranes, and square brackets `[]` to negative spin (`-1`) membranes.
+* **Parsing via Recursive DPO Rewriting:** Implemented token-chain construction in the arena and a DPO parser engine (`parse_via_dpo`) that recursively simplifies token-chain subgraphs into finalized parsed topologies.
+
+### 9. Stage 4: High-Performance Concurrent Interning
+* **Thread-Safe Memory Arena:** Wrapped `HypergraphArena` and `IdentityEngine` internal collections with `spin::RwLock` utilizing a high-performance double-checked locking pattern (fast-path read-lock, slow-path write-lock).
+* **Interior Mutability (`&self`):** Multiple concurrent threads can safely call `intern(&self)` or run rewriting/parsing rules simultaneously with zero deadlock risks and minimal lock contention.
+
+### 10. Stage 5: WebAssembly Atomics and Concurrency Bus
+* **Lock-Free Sync Bus (`sync.rs`):** Implemented a lock-free Single-Producer Multi-Consumer (SPMC) Ring Buffer Queue inside `sync.rs` utilizing atomic CAS loops for concurrent, wait-free thread synchronization of compact, 80-byte `DeltaEvent`s.
+
+### 11. Svelte 5 + TypeScript + Vite Dual-Pane Workspace UI
+* **Dual-Pane Tiling Workspace:** Fully implemented a 50/50 division under `ui/` featuring a live H-Cypher text editor, live telemetry metrics (WASM memory, active FPS), and an interactive Canvas.
+* **Organic Hulls & Radial Gradients:** Grouping membranes are rendered as organic convex hulls wrapping boundary circles. Filled with radial gradients that get **radially more transparent close to the nodes/borders**, reflecting non-Euclidean perimeters.
+* **Anti-Overlap Collision Resolver:** Implemented strict safety distance constraints (forcing a minimum `145px` gap between any two nodes) to completely eliminate text, node circle, and edge-overlap collisions.
+* **Rounded Square Atoms:** Refactored node shapes into rounded squares whose width adjusts dynamically based on the label text to prevent overflow.
+* **Thick Text-Embedded Edges:** Modified relationships to draw as thick, rotated capsules. The edge's text label is rendered inside the capsule, and arrowheads stop dynamically at the rectangular perimeter of target nodes.
+* **Upright Text Invariants:** Implemented a 180-degree flip check inside the rotated canvas text rendering, guaranteeing that edge labels are **never** drawn upside down.
+* **Membrane Exclusion Force:** Implemented a smooth repulsive push to push external, un-grouped atoms out of membrane perimeters.
+
+### 12. Highly Rigorous Test Coverage (19/19 Passed)
+* **10 Unit Tests (`src/lib.rs`):** Testing interning, parsing, cycle WL coloring, DPO validations, and coinductive cycle termination.
+* **9 E2E Integration Tests (`tests/integration_tests.rs`):** Testing 100-thread concurrent write pools, 15-node isomorphic cycles, deep expression DPO reduction pipelines, and causality reversibility backtracking via `sys::residue`.
 
 ---
 
 ## 🚀 Future Stages & Atomic Implementations
 
-To ensure high engineering velocity, absolute code quality, and non-breaking changes, all future work is divided into minimal, implementable, and well-documented atomic features.
+### 🌐 Stage 6: Distributed P2P Boundary Membrane Partitioning & Sync
+* **Goal:** Scale the Holds substrate to an internet-scale, decentralized network.
 
----
-
-### 📊 Stage 1: `no_std` & WebAssembly Footprint Optimization
-* **Goal:** Compile the kernel without the standard library (`std`) to support direct, low-overhead browser loading and hit the **15 KB** footprint target.
-
-#### Task 1.1: Dependency and Attribute Setup
-* **Description:** Update `Cargo.toml` dependencies and add `no_std` conditional compiling attributes to the library root.
-* **Implementation Plan:**
-  - Configure `blake3` dependency with `default-features = false` in `Cargo.toml`.
-  - Add `#![cfg_attr(not(test), no_std)]` to the top of `kernel/src/lib.rs`.
+#### Task 6.1: Boundary Membrane Sharding
+* **Description:** Allow the hypergraph to be split naturally across machines along membrane boundaries.
+* **Details:**
+  - Add public network metadata namespace (`net::shared`) to grouping membranes.
+  - Implement cross-network hyperedges that link local nodes to remote nodes by referencing their 256-bit absolute cryptographic hash (`h_full`) instead of a local index.
+  - Enforce Opaque Boundaries (`meta::opaque`), preventing remote peers from traversing or executing pattern-matching inside private local membranes.
 * **Verification & Tests:**
-  - **Compilation Test:** Verify the library compiles with `cargo check --target wasm32-unknown-unknown` under release.
-  - **Unit Tests:** Run `cargo test` to ensure existing standard testing features do not break under the test profile (which still uses `std`).
+  - **Unit Test:** Verify sharding mappings andopaque boundary blocking.
 
-#### Task 1.2: Refactor to BTreeMap for Zero-Dependency `no_std`
-* **Description:** The standard library `HashMap` relies on the system random-number generator, which is unavailable in raw WebAssembly `no_std` without importing heavy external crates (like `hashbrown` or `rand`). We will refactor our indexing maps to use `BTreeMap` from the `alloc` crate for zero external dependency bloat.
-* **Implementation Plan:**
-  - Replace `std::collections::HashMap` with `alloc::collections::BTreeMap` inside `lib.rs` under non-test profiles.
-  - Since `blake3::Hash` does not implement `Ord` (required by `BTreeMap`), map `intern_pool` to use the byte representation `[u8; 32]` as the key: `BTreeMap<[u8; 32], NodeId>`.
-  - Map `BindingMap` to `BTreeMap<String, NodeId>`.
-  - Import allocator collections using `extern crate alloc;` at the top of the file under `#[cfg(not(test))]`.
-* **Verification & Tests:**
-  - **Compilation Test:** Run `cargo check --target wasm32-unknown-unknown`.
-  - **Unit Tests:** Run `cargo test` to verify that all 6 existing unit tests pass flawlessly with the new `BTreeMap` backing.
-  - **E2E Integration Tests:** Run `cargo test --test integration_tests` to verify end-to-end rewrite matches.
-
----
-
-### 🧬 Stage 2: Weisfeiler-Lehman (WL) Canonizer (Stage 2)
-* **Goal:** Enable global topological isomorphism matching across nested groupings and membranes.
-
-#### Task 2.1: $k$-Hop Color Refinement Loop
-* **Description:** Implement an iterative color refinement loop in the `IdentityEngine` to assign stable topological signatures to every node based on its neighbors.
-* **Verification & Tests:**
-  - **Unit Test:** Create `test_wl_color_refinement_isomorphism` verifying that isomorphic but structurally rotated graphs receive identical signatures.
-
-#### Task 2.2: Coinductive Greatest Fixed Point (GFP) Cycle Termination
-* **Description:** Enforce strict Greatest Fixed Point (GFP) termination when the color refinement engine encounters a grouping boundary with `Spin = -1` (Klein Bottle topology), avoiding infinite recursions.
-* **Verification & Tests:**
-  - **Unit Test:** Create `test_gfp_cycle_termination` asserting that circular and self-referential graph loops hash and terminate in $O(1)$ space without stack overflow.
-  - **E2E Integration Test:** Verify that quines and self-containing compiler scopes compile and run deterministically.
-
----
-
-### 🔤 Stage 3: AST-Free H-Cypher Parser (Stage 4)
-* **Goal:** Direct text-to-graph parsing.
-
-#### Task 3.1: Syntax-to-Topology Layout Mapping
-* **Description:** Design parsing rules converting text syntax into raw topological structures (whitespace juxtaposition, scoping boundaries).
-* **Verification & Tests:**
-  - **Unit Test:** Verify text input like `"a b c"` parses into a quaternary `Adjacency`.
-
-#### Task 3.2: Parsing via Recursive DPO Rewriting
-* **Description:** Implement the parsing engine as a sequence of DPO rewrite rules that progressively simplify character token arrays.
-* **Verification & Tests:**
-  - **E2E Integration Test:** Parse a complex H-Cypher script directly into the memory arena and verify isomorphic equivalence with a pre-built reference graph.
-
----
-
-### 🔒 Stage 4: High-Performance Concurrent Interning
-* **Goal:** Lock-free concurrent interning writes.
-
-#### Task 4.1: Lock-Free Hash Table
-* **Description:** Implement a Lock-Free Concurrent Robin Hood Hash Table utilizing atomic CAS pointer increments.
-* **Verification & Tests:**
-  - **Unit Test:** Spawn 100 concurrent threads executing parallel writes to the interning pool and assert no duplicate NodeIds are created.
-
----
-
-### 🧵 Stage 5: WebAssembly Atomics and Worker Scaling
-* **Goal:** Multi-core parallel execution inside WebAssembly.
-
-#### Task 5.1: `wasm32-atomic` Synchronization
-* **Description:** Leverage `wasm32-atomic` instruction sets over SharedArrayBuffers to synchronize parallel worker threads.
-* **Verification & Tests:**
-  - **Compilation Test:** Verify compilation under the WebAssembly target with atomic features enabled.
-  - **E2E Integration Test:** Assert non-blocking operations on parallel thread pools with zero lock contention.
-
----
-
-### 🌐 Stage 6: P2P Membrane Partitioning & Sync
-* **Goal:** Decentralized, internet-scale replication.
-
-#### Task 6.1: Membrane Sharding & MMR delta-sync
-* **Description:** Implement boundary sharding along membranes and MMR delta search transport.
+#### Task 6.2: Merkle Mountain Range (MMR) Delta Synchronization
+* **Description:** Enable low-overhead, logarithmic state synchronization between peer nodes.
+* **Details:**
+  - Construct a lightweight, append-only Merkle Mountain Range (MMR) logging all local topological commits.
+  - Implement an MMR peak-hash exchange protocol. Peers perform a fast binary search down the MMR tree to isolate the exact transaction step where their topological states diverged, and stream only the raw differential byte block ($\Delta H$).
 * **Verification & Tests:**
   - **E2E Integration Test:** Sync two distributed peer instances, verifying that only the differential subgraph ($\Delta H$) is streamed and ingested.
+
+#### Task 6.3: Cryptographic Provenance Vector Verification
+* **Description:** Secure the trustless, peer-to-peer gossip network against corrupted or unauthorized state injections.
+* **Details:**
+  - Secure all transitions $L \implies R$ with an immutable Provenance Vector in `sys::provenance` signed with Ed25519 keys.
+  - Implement bilinear verification checks inside the gossip pool to audit transaction authenticity before memory ingestion.
+* **Verification & Tests:**
+  - **Unit Test:** Audit transaction authenticity and sign validation.

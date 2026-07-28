@@ -285,8 +285,9 @@ export class CanvasRenderer {
         const dy = tNode.y - sNode.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        // Desired spring length
-        const springLen = 190;
+        // Desired spring length based on the edge's label length to prevent text overlaps
+        const labelWidth = edge.label.length * 6.5;
+        const springLen = Math.max(160, labelWidth + 120);
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -300,6 +301,55 @@ export class CanvasRenderer {
           tNode.vy -= fy;
         }
       }
+    });
+
+    // 2.5 Membrane Exclusion Force for External Atoms
+    // Finds any active atoms that are not inside a given membrane, and applies
+    // a smooth outward repulsive push if they drift too close to the membrane centroid.
+    this.membranes.forEach(m => {
+      const activeMembraneNodes = m.nodeIds
+        .map(id => this.nodes.get(id))
+        .filter((n): n is VisualNode => !!n && !n.isRemoved);
+
+      if (activeMembraneNodes.length === 0) return;
+
+      // Find centroid of the membrane
+      let sumX = 0, sumY = 0;
+      activeMembraneNodes.forEach(n => {
+        sumX += n.x;
+        sumY += n.y;
+      });
+      const cx = sumX / activeMembraneNodes.length;
+      const cy = sumY / activeMembraneNodes.length;
+
+      // Find maximum distance from centroid to any node inside this membrane
+      let maxDist = 50;
+      activeMembraneNodes.forEach(n => {
+        const d = Math.sqrt((n.x - cx) * (n.x - cx) + (n.y - cy) * (n.y - cy));
+        if (d > maxDist) maxDist = d;
+      });
+      const exclusionRadius = maxDist + 50; // boundary + padding margin
+
+      // Push any node NOT inside this membrane outside the boundary
+      nodesArr.forEach(node => {
+        if (node.isRemoved) return;
+        if (!m.nodeIds.includes(node.id)) {
+          const dx = node.x - cx;
+          const dy = node.y - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+          if (dist < exclusionRadius) {
+            const force = (exclusionRadius - dist) * 0.15; // smooth outward push
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+
+            if (node.id !== this.draggedNodeId) {
+              node.vx += fx;
+              node.vy += fy;
+            }
+          }
+        }
+      });
     });
 
     // 3. Center Gravity & Apply Velocities
@@ -650,9 +700,20 @@ export class CanvasRenderer {
         this.ctx.restore();
       }
 
-      // Draw direction arrow head
+      // Calculate label dimensions for thick embedded ribbon
+      this.ctx.font = 'bold 9px monospace';
+      const labelWidth = this.ctx.measureText(edge.label).width;
+      const capsuleW = labelWidth + 16;
+      const capsuleH = 18;
+
       const angle = Math.atan2(t.y - s.y, t.x - s.x);
-      const arrowDist = t.radius + 6; // stop right before node circumference
+
+      // Determine target node's dynamic rounded-square width to stop arrowhead at border
+      this.ctx.font = 'bold 10px monospace';
+      const tLabelWidth = this.ctx.measureText(t.label).width;
+      const w_t = Math.max(55, tLabelWidth + 24);
+      const arrowDist = (w_t / 2) + 6; // stop at dynamic rectangular boundary
+
       const ax = t.x - Math.cos(angle) * arrowDist;
       const ay = t.y - Math.sin(angle) * arrowDist;
 
@@ -664,16 +725,39 @@ export class CanvasRenderer {
       this.ctx.closePath();
       this.ctx.fill();
 
-      // Label
+      // Draw the Thick Edge Capsule and embed the Text Name inside it
       const midX = (s.x + t.x) / 2;
       const midY = (s.y + t.y) / 2;
-      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.5)' : '#94a3b8';
-      this.ctx.font = '9px monospace';
       
+      // Prevent edge label text from being upside down when pointing leftwards
+      let textAngle = angle;
+      if (textAngle < -Math.PI) textAngle += Math.PI * 2;
+      if (textAngle > Math.PI) textAngle -= Math.PI * 2;
+      if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
+        textAngle += Math.PI;
+      }
+
       this.ctx.save();
       this.ctx.translate(midX, midY);
-      this.ctx.rotate(angle);
-      this.ctx.fillText(edge.label, -this.ctx.measureText(edge.label).width / 2, -6);
+      this.ctx.rotate(textAngle);
+
+      // Capsule Background (masks the underlying line)
+      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.15)' : 'rgba(30, 41, 59, 0.96)';
+      this.ctx.strokeStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.65)' : '#334155';
+      this.ctx.lineWidth = 1.5;
+
+      this.ctx.beginPath();
+      this.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, 9);
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Text Label centered inside the capsule
+      this.ctx.fillStyle = isRemovedEdge ? '#fca5a5' : '#94a3b8';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(edge.label, 0, 0);
+
       this.ctx.restore();
     });
   }
@@ -707,17 +791,24 @@ export class CanvasRenderer {
         bgGradEnd = '#14532d';
       }
 
+      // Calculate dynamic rounded-square bounds based on the text width
+      this.ctx.font = 'bold 10px monospace';
+      const textWidth = this.ctx.measureText(node.label).width;
+      const w = Math.max(55, textWidth + 24);
+      const h = 36; // perfect height for title + subtitle
+
       // Node shadow/glow
       this.ctx.shadowColor = borderCol;
       this.ctx.shadowBlur = this.draggedNodeId === node.id ? 22 : 10;
 
-      // Draw background circle
-      const grad = this.ctx.createRadialGradient(node.x, node.y, 2, node.x, node.y, node.radius);
+      // Draw background rounded square
+      const grad = this.ctx.createLinearGradient(node.x, node.y - h / 2, node.x, node.y + h / 2);
       grad.addColorStop(0, bgGradStart);
       grad.addColorStop(1, bgGradEnd);
       this.ctx.fillStyle = grad;
+      
       this.ctx.beginPath();
-      this.ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      this.roundRect(node.x - w / 2, node.y - h / 2, w, h, 8);
       this.ctx.fill();
 
       // Border outline
@@ -728,17 +819,17 @@ export class CanvasRenderer {
       // Turn off shadow glow for text rendering to keep it sharp
       this.ctx.shadowBlur = 0;
 
-      // Label text
+      // Label text centered
       this.ctx.fillStyle = node.isRemoved ? '#fca5a5' : '#f8fafc';
       this.ctx.font = 'bold 10px monospace';
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
-      this.ctx.fillText(node.label, node.x, node.y - 2);
+      this.ctx.fillText(node.label, node.x, node.y - 4);
 
-      // Subtitle or type index
+      // Subtitle or type index centered
       this.ctx.fillStyle = node.isRemoved ? '#ef4444' : '#64748b';
       this.ctx.font = '7px monospace';
-      this.ctx.fillText(node.type === 'residue' ? 'residue' : 'atom', node.x, node.y + 8);
+      this.ctx.fillText(node.type === 'residue' ? 'residue' : 'atom', node.x, node.y + 6);
 
       this.ctx.restore();
     });
