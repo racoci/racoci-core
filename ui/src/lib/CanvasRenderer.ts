@@ -235,11 +235,10 @@ export class CanvasRenderer {
    */
   private updatePhysics() {
     const nodesArr = Array.from(this.nodes.values());
-    const kRepulsion = 1200; // force of node separation
-    const kGravity = 0.03;   // pull toward center
-    const kDamping = 0.85;   // friction
-    const kSpring = 0.04;    // edge attraction force
-    const minSeparation = 100;
+    const kRepulsion = 1400; // force of node separation
+    const kGravity = 0.015;  // gentle pull toward center
+    const kDamping = 0.65;   // higher friction (lower value dampens speed faster)
+    const kSpring = 0.015;   // gentle spring force
 
     const width = this.canvas.width / window.devicePixelRatio;
     const height = this.canvas.height / window.devicePixelRatio;
@@ -259,7 +258,7 @@ export class CanvasRenderer {
         const dy = n2.y - n1.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        if (dist < 300) {
+        if (dist < 350) {
           const force = kRepulsion / (dist * dist);
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
@@ -287,7 +286,7 @@ export class CanvasRenderer {
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
         // Desired spring length
-        const springLen = 150;
+        const springLen = 190;
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -344,6 +343,39 @@ export class CanvasRenderer {
         node.y = Math.max(node.radius + 20, Math.min(height - node.radius - 20, node.y));
       }
     });
+
+    // 4. Strict Geometric Collision prevention (Verlet-style position projection)
+    // Ensures a minimum separation distance of 140px between any two active nodes,
+    // completely eliminating text, node circle, and edge-overlap collisions.
+    const safetyDistance = 145;
+    for (let i = 0; i < nodesArr.length; i++) {
+      const n1 = nodesArr[i];
+      if (n1.isRemoved) continue;
+
+      for (let j = i + 1; j < nodesArr.length; j++) {
+        const n2 = nodesArr[j];
+        if (n2.isRemoved) continue;
+
+        const dx = n2.x - n1.x;
+        const dy = n2.y - n1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        if (dist < safetyDistance) {
+          const overlap = safetyDistance - dist;
+          const pushX = (dx / dist) * overlap * 0.5;
+          const pushY = (dy / dist) * overlap * 0.5;
+
+          if (n1.id !== this.draggedNodeId) {
+            n1.x -= pushX;
+            n1.y -= pushY;
+          }
+          if (n2.id !== this.draggedNodeId) {
+            n2.x += pushX;
+            n2.y += pushY;
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -475,42 +507,98 @@ export class CanvasRenderer {
 
       if (activeNodes.length === 0) return;
 
-      // Calculate Bounding box with padding
-      let minX = Infinity, minY = Infinity;
-      let maxX = -Infinity, maxY = -Infinity;
-
+      // Generate a set of 8 circular boundary points around each node
+      // to create a smooth, rounded padding boundary around the nodes.
+      let boundaryPoints: { x: number; y: number }[] = [];
+      const padding = 35; // perimeter distance from nodes
       activeNodes.forEach(n => {
-        minX = Math.min(minX, n.x - n.radius);
-        minY = Math.min(minY, n.y - n.radius);
-        maxX = Math.max(maxX, n.x + n.radius);
-        maxY = Math.max(maxY, n.y + n.radius);
+        const r = n.radius + padding;
+        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+          boundaryPoints.push({
+            x: n.x + Math.cos(angle) * r,
+            y: n.y + Math.sin(angle) * r,
+          });
+        }
       });
 
-      const padding = 25;
-      const x = minX - padding;
-      const y = minY - padding;
-      const w = (maxX - minX) + padding * 2;
-      const h = (maxY - minY) + padding * 2;
+      // Compute the tightest enclosing Convex Hull of the boundary points
+      const hull = this.getConvexHull(boundaryPoints);
+      if (hull.length < 3) return;
 
-      // Glow style
-      this.ctx.strokeStyle = 'rgba(168, 85, 247, 0.8)'; // Violet
-      this.ctx.lineWidth = 1.5;
-      this.ctx.fillStyle = 'rgba(168, 85, 247, 0.03)';
+      // Calculate centroid (center of mass) of active nodes for the radial gradient center
+      let sumX = 0, sumY = 0;
+      activeNodes.forEach(n => {
+        sumX += n.x;
+        sumY += n.y;
+      });
+      const cx = sumX / activeNodes.length;
+      const cy = sumY / activeNodes.length;
+
+      // Find maximum distance from centroid to any hull point to size the gradient radius
+      let maxDist = 1;
+      hull.forEach(p => {
+        const d = Math.sqrt((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy));
+        if (d > maxDist) maxDist = d;
+      });
+
+      // Setup styles based on Membrane spin vector orientation (+1 Euclidean, -1 Klein)
+      let gradColorStart = '';
+      let gradColorMid = '';
+      let strokeColor = '';
+      let shadowColor = '';
+
+      if (m.spin === -1) {
+        // Cyan/Teal non-orientable theme
+        gradColorStart = 'rgba(0, 210, 255, 0.22)';
+        gradColorMid = 'rgba(168, 85, 247, 0.08)'; // slight violet twist
+        strokeColor = 'rgba(0, 210, 255, 0.75)';
+        shadowColor = 'rgba(0, 210, 255, 0.45)';
+      } else {
+        // Deep Violet Euclidean theme
+        gradColorStart = 'rgba(168, 85, 247, 0.25)';
+        gradColorMid = 'rgba(168, 85, 247, 0.11)';
+        strokeColor = 'rgba(168, 85, 247, 0.75)';
+        shadowColor = 'rgba(168, 85, 247, 0.45)';
+      }
+
+      // Create the organic radial gradient: dense at centroid, radially fading close to the nodes/borders
+      const grad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, maxDist);
+      grad.addColorStop(0, gradColorStart);
+      grad.addColorStop(0.5, gradColorMid);
+      grad.addColorStop(1, 'rgba(168, 85, 247, 0.01)'); // fades to transparent at perimeters
 
       this.ctx.save();
-      this.ctx.shadowColor = 'rgba(168, 85, 247, 0.4)';
-      this.ctx.shadowBlur = 12;
+      this.ctx.lineWidth = 1.5;
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.fillStyle = grad;
+      this.ctx.shadowColor = shadowColor;
+      this.ctx.shadowBlur = 15;
 
+      // Draw the closed polygon path
       this.ctx.beginPath();
-      this.roundRect(x, y, w, h, 16);
+      this.ctx.moveTo(hull[0].x, hull[0].y);
+      for (let k = 1; k < hull.length; k++) {
+        this.ctx.lineTo(hull[k].x, hull[k].y);
+      }
+      this.ctx.closePath();
+      
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.restore();
 
-      // Title tag tab
-      this.ctx.fillStyle = 'rgba(168, 85, 247, 0.9)';
-      this.ctx.font = 'bold 10px monospace';
-      this.ctx.fillText(`MEMBRANE [ ${m.label} ]`, x + 12, y + 18);
+      // Title tag positioning (slightly above the highest point of the hull)
+      let topY = Infinity;
+      let topX = 0;
+      hull.forEach(p => {
+        if (p.y < topY) {
+          topY = p.y;
+          topX = p.x;
+        }
+      });
+
+      this.ctx.fillStyle = m.spin === -1 ? 'rgba(0, 210, 255, 0.9)' : 'rgba(168, 85, 247, 0.9)';
+      this.ctx.font = 'bold 9px monospace';
+      this.ctx.fillText(`MEMBRANE [ ${m.label} ]`, topX - 45, topY - 12);
     });
   }
 
@@ -750,6 +838,54 @@ export class CanvasRenderer {
   private onMouseUp = () => {
     this.draggedNodeId = null;
   };
+
+  // Helper to compute Convex Hull using Jarvis March (Gift Wrapping) algorithm
+  private getConvexHull(points: { x: number; y: number }[]): { x: number; y: number }[] {
+    if (points.length <= 2) return points;
+
+    // Find the point with the lowest y-coordinate (and lowest x to break ties)
+    let startPoint = points[0];
+    for (const p of points) {
+      if (p.y < startPoint.y || (p.y === startPoint.y && p.x < startPoint.x)) {
+        startPoint = p;
+      }
+    }
+
+    const hull = [];
+    let currentPoint = startPoint;
+
+    loop: while (true) {
+      hull.push(currentPoint);
+      let nextPoint = points[0];
+
+      for (const p of points) {
+        if (p === currentPoint) continue;
+        // Cross product of vectors (current -> next) and (current -> p) to check orientation
+        const val =
+          (nextPoint.y - currentPoint.y) * (p.x - nextPoint.x) -
+          (nextPoint.x - currentPoint.x) * (p.y - nextPoint.y);
+
+        if (
+          nextPoint === currentPoint ||
+          val > 0 ||
+          (val === 0 &&
+            (p.x - currentPoint.x) * (p.x - currentPoint.x) +
+              (p.y - currentPoint.y) * (p.y - currentPoint.y) >
+              (nextPoint.x - currentPoint.x) * (nextPoint.x - currentPoint.x) +
+                (nextPoint.y - currentPoint.y) * (nextPoint.y - currentPoint.y))
+        ) {
+          nextPoint = p;
+        }
+      }
+
+      currentPoint = nextPoint;
+      if (currentPoint === startPoint || hull.length > points.length) {
+        break;
+      }
+    }
+
+    return hull;
+  }
 
   // Helper rounded rectangle drawer
   private roundRect(x: number, y: number, w: number, h: number, r: number) {
