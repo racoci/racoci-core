@@ -25,7 +25,7 @@ MATCH {
   let containerElement: HTMLElement | null = $state(null);
 
   // 3. Simulation & state
-  let renderer: CanvasRenderer | null = null;
+  let renderer = $state<CanvasRenderer | null>(null);
   let selectedNode = $state<any>(null);
   let systemStatus = $state("IDLE (LOCK_FREE_BUS_SYNC)");
   let wasmMemoryUsage = $state(128.4); // KB representation
@@ -67,6 +67,14 @@ MATCH {
 
       // Set initial size
       handleResize();
+      
+      // Initial topology load
+      renderer.updateTopology(
+        parseResult.nodes,
+        parseResult.edges,
+        parseResult.membranes
+      );
+      
       window.addEventListener('resize', handleResize);
 
       // Simulate minor FPS fluctuation to look alive
