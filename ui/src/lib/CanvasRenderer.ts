@@ -302,9 +302,15 @@ export class CanvasRenderer {
         const dy = tNode.y - sNode.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        // Desired spring length based on the edge's label length to prevent text overlaps
-        const labelWidth = edge.label.length * 6.5;
-        const springLen = Math.max(210, labelWidth + 130);
+        // Calculate the dynamic widths of the source and target nodes to prevent overlapping
+        const sWidth = Math.max(55, sNode.label.length * 6.5 + 24);
+        const tWidth = Math.max(55, tNode.label.length * 6.5 + 24);
+        const nodeRadiiSum = (sWidth / 2) + (tWidth / 2);
+
+        // Desired spring length with generous over-estimation:
+        // Combines the node sizes, the edge label width, and a highly spacious 160px buffer
+        const labelWidth = edge.label.length * 7;
+        const springLen = Math.max(260, labelWidth + 160 + nodeRadiiSum);
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -856,8 +862,10 @@ export class CanvasRenderer {
       const p2y = sy - ny * 3;
 
       // Proportional scale checking to prevent overlapping on short edges
-      const bDist = Math.min(dist * 0.28, 12); // body base offset
-      const shDist = Math.max(bDist + 4, dist - 15); // shoulder base offset (always in front of body base)
+      // Reaches full body thickness tightly over 8px, and makes the arrowhead extremely compact (10px length)
+      // to maximize the straight flat body space for the text label.
+      const bDist = Math.min(dist * 0.15, 8); // body base offset
+      const shDist = Math.max(bDist + 2, dist - 10); // shoulder base offset
 
       const shx = sx + Math.cos(angle) * shDist;
       const shy = sy + Math.sin(angle) * shDist;
