@@ -679,6 +679,9 @@ export class CanvasRenderer {
   /**
    * Draw hyperedges and standard relationships with multi-dimensional routing support.
    */
+  /**
+   * Draw hyperedges and standard relationships with multi-dimensional routing support.
+   */
   private drawEdges() {
     this.edges.forEach(edge => {
       const sCoord = this.resolveCoordinate(edge.source);
@@ -697,69 +700,88 @@ export class CanvasRenderer {
       const finalEdgeColor = applyContrastProtection(this.backgroundColor, baseEdgeColor);
       const bgL = getRelativeLuminance(hexToRgb(this.backgroundColor).r, hexToRgb(this.backgroundColor).g, hexToRgb(this.backgroundColor).b);
 
-      // Styles
-      this.ctx.lineWidth = 2.0;
-      if (isRemovedEdge) {
-        const finalRemovedColor = applyContrastProtection(this.backgroundColor, '#ef4444');
-        this.ctx.strokeStyle = `rgba(${hexToRgb(finalRemovedColor).r}, ${hexToRgb(finalRemovedColor).g}, ${hexToRgb(finalRemovedColor).b}, ${alpha * 0.45})`; // Translucent Red
-      } else if (edge.isNew) {
-        const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
-        this.ctx.strokeStyle = `rgba(${hexToRgb(finalNewColor).r}, ${hexToRgb(finalNewColor).g}, ${hexToRgb(finalNewColor).b}, ${alpha * 0.8})`; // Green glow for new
+      const angle = Math.atan2(tCoord.y - sCoord.y, tCoord.x - sCoord.x);
+
+      // 1. Determine Source Boundary Offset (sourceDist) so edge wraps/hugs the origin snugly
+      let sourceDist = 0;
+      const sNode = this.nodes.get(edge.source);
+
+      if (sNode) {
+        this.ctx.font = 'bold 10px monospace';
+        const sLabelWidth = this.ctx.measureText(sNode.label).width;
+        const w_s = Math.max(55, sLabelWidth + 24);
+        sourceDist = (w_s / 2); // wrap right at border
       } else {
-        if (bgL >= 0.5) {
-          this.ctx.strokeStyle = finalEdgeColor === '#ffffff' ? `rgba(0, 0, 0, ${alpha * 0.25})` : `rgba(${hexToRgb(finalEdgeColor).r}, ${hexToRgb(finalEdgeColor).g}, ${hexToRgb(finalEdgeColor).b}, ${alpha * 0.85})`;
+        const sEdge = this.edges.find(e => e.id === edge.source || e.label === edge.source);
+        if (sEdge) {
+          sourceDist = 12;
         } else {
-          this.ctx.strokeStyle = finalEdgeColor === '#ffffff' ? `rgba(255, 255, 255, ${alpha * 0.25})` : `rgba(${hexToRgb(finalEdgeColor).r}, ${hexToRgb(finalEdgeColor).g}, ${hexToRgb(finalEdgeColor).b}, ${alpha * 0.85})`;
+          const sMemb = this.membranes.find(m => m.id === edge.source || m.label === edge.source);
+          if (sMemb) {
+            // Find intersection with source membrane's convex hull
+            const activeNodes = sMemb.nodeIds
+              .map(id => this.nodes.get(id))
+              .filter((n): n is VisualNode => !!n && !n.isRemoved);
+
+            if (activeNodes.length > 0) {
+              const boundaryPoints: { x: number; y: number }[] = [];
+              const padding = 35; // perimeter distance from nodes
+              activeNodes.forEach(n => {
+                const r = n.radius + padding;
+                for (let angleVal = 0; angleVal < Math.PI * 2; angleVal += Math.PI / 4) {
+                  boundaryPoints.push({
+                    x: n.x + Math.cos(angleVal) * r,
+                    y: n.y + Math.sin(angleVal) * r,
+                  });
+                }
+              });
+              const hull = this.getConvexHull(boundaryPoints);
+              if (hull.length >= 3) {
+                let closestIntersect: { x: number; y: number } | null = null;
+                let minDist = Infinity;
+                for (let i = 0; i < hull.length; i++) {
+                  const p2 = hull[i];
+                  const p3 = hull[(i + 1) % hull.length];
+                  const ip = this.getLineIntersection(
+                    tCoord.x, tCoord.y, sCoord.x, sCoord.y, // from target center to source center
+                    p2.x, p2.y, p3.x, p3.y
+                  );
+                  if (ip) {
+                    const dist = Math.sqrt((ip.x - tCoord.x) ** 2 + (ip.y - tCoord.y) ** 2);
+                    if (dist < minDist) {
+                      minDist = dist;
+                      closestIntersect = ip;
+                    }
+                  }
+                }
+                if (closestIntersect) {
+                  sourceDist = Math.sqrt((closestIntersect.x - sCoord.x) ** 2 + (closestIntersect.y - sCoord.y) ** 2);
+                } else {
+                  sourceDist = 45;
+                }
+              } else {
+                sourceDist = 45;
+              }
+            }
+          }
         }
       }
 
-      // Draw standard curved ribbon / edge line
-      this.ctx.beginPath();
-      this.ctx.moveTo(sCoord.x, sCoord.y);
-      this.ctx.lineTo(tCoord.x, tCoord.y);
-      this.ctx.stroke();
-
-      // Draw dynamic glowing flow particles moving along edges to represent state changes
-      if (!isRemovedEdge) {
-        edge.pulseOffset = (edge.pulseOffset + 0.006) % 1.0;
-        const px = sCoord.x + (tCoord.x - sCoord.x) * edge.pulseOffset;
-        const py = sCoord.y + (tCoord.y - sCoord.y) * edge.pulseOffset;
-
-        const pulseColor = finalEdgeColor === '#ffffff' ? '#00f6ff' : finalEdgeColor;
-        this.ctx.fillStyle = pulseColor;
-        this.ctx.save();
-        this.ctx.shadowColor = pulseColor;
-        this.ctx.shadowBlur = 8;
-        this.ctx.beginPath();
-        this.ctx.arc(px, py, 3.5, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
-      }
-
-      // Calculate label dimensions for thick embedded ribbon
-      this.ctx.font = 'bold 9px monospace';
-      const labelWidth = this.ctx.measureText(edge.label).width;
-      const capsuleW = labelWidth + 16;
-      const capsuleH = 18;
-
-      const angle = Math.atan2(tCoord.y - sCoord.y, tCoord.x - sCoord.x);
-
-      // Determine arrowhead stopping distance based on target entity type
+      // 2. Determine Arrowhead Target Boundary Offset (arrowDist)
       let arrowDist = 0;
       const targetId = edge.target;
       const targetNode = this.nodes.get(targetId);
 
       if (targetNode) {
-        // If target is a node: stop at w_t / 2 + 6
+        // If target is a node: stop right at border
         this.ctx.font = 'bold 10px monospace';
         const tLabelWidth = this.ctx.measureText(targetNode.label).width;
         const w_t = Math.max(55, tLabelWidth + 24);
-        arrowDist = (w_t / 2) + 6;
+        arrowDist = (w_t / 2) + 2;
       } else {
         const targetEdge = this.edges.find(e => e.id === targetId || e.label === targetId);
         if (targetEdge) {
-          // If target is an edge/capsule: stop at capsuleH / 2 + 4 (e.g. 14px)
-          arrowDist = 14;
+          arrowDist = 12;
         } else {
           const targetMemb = this.membranes.find(m => m.id === targetId || m.label === targetId);
           if (targetMemb) {
@@ -800,7 +822,7 @@ export class CanvasRenderer {
                   }
                 }
                 if (closestIntersect) {
-                  arrowDist = Math.sqrt((closestIntersect.x - tCoord.x) ** 2 + (closestIntersect.y - tCoord.y) ** 2);
+                  arrowDist = Math.sqrt((closestIntersect.x - tCoord.x) ** 2 + (closestIntersect.y - tCoord.y) ** 2) + 2;
                 } else {
                   arrowDist = 45; // default fallback
                 }
@@ -814,20 +836,119 @@ export class CanvasRenderer {
         }
       }
 
-      const ax = tCoord.x - Math.cos(angle) * arrowDist;
-      const ay = tCoord.y - Math.sin(angle) * arrowDist;
+      // Exact boundaries
+      const sx = sCoord.x + Math.cos(angle) * sourceDist;
+      const sy = sCoord.y + Math.sin(angle) * sourceDist;
 
-      this.ctx.fillStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (finalEdgeColor === '#ffffff' ? '#3b82f6' : finalEdgeColor);
+      const tx = tCoord.x - Math.cos(angle) * arrowDist;
+      const ty = tCoord.y - Math.sin(angle) * arrowDist;
+
+      const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2) || 1;
+
+      // 3. Draw the solid, custom tapered arrow polygon with asymptotic thickening
+      const nx = -Math.sin(angle);
+      const ny = Math.cos(angle);
+
+      // Thin origin vertices wrapping source
+      const p1x = sx + nx * 2;
+      const p1y = sy + ny * 2;
+      const p2x = sx - nx * 2;
+      const p2y = sy - ny * 2;
+
+      // Shoulder point at 15px before the target tip
+      const shDist = Math.max(0, dist - 15);
+      const shx = sx + Math.cos(angle) * shDist;
+      const shy = sy + Math.sin(angle) * shDist;
+
+      // Flared arrowhead shoulder coordinates
+      const p3x = shx + nx * 11;
+      const p3y = shy + ny * 11;
+      const p4x = shx - nx * 11;
+      const p4y = shy - ny * 11;
+
+      // Thick body base coordinates (reaches full thickness quickly over 12px)
+      const bDist = Math.min(dist, 12);
+      const bx = sx + Math.cos(angle) * bDist;
+      const by = sy + Math.sin(angle) * bDist;
+
+      const p5x = bx + nx * 9;
+      const p5y = by + ny * 9;
+      const p6x = bx - nx * 9;
+      const p6y = by - ny * 9;
+
+      this.ctx.save();
+      this.ctx.globalAlpha = alpha;
+
+      let fillCol = '';
+      let borderCol = '';
+
+      if (isRemovedEdge) {
+        const finalRemovedColor = applyContrastProtection(this.backgroundColor, '#ef4444');
+        const rgbRem = hexToRgb(finalRemovedColor);
+        fillCol = `rgba(${rgbRem.r}, ${rgbRem.g}, ${rgbRem.b}, 0.15)`;
+        borderCol = `rgba(${rgbRem.r}, ${rgbRem.g}, ${rgbRem.b}, ${alpha * 0.45})`;
+      } else if (edge.isNew) {
+        const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
+        const rgbNew = hexToRgb(finalNewColor);
+        fillCol = bgL >= 0.5 ? 'rgba(240, 253, 244, 0.96)' : 'rgba(5, 46, 22, 0.96)';
+        borderCol = `rgba(${rgbNew.r}, ${rgbNew.g}, ${rgbNew.b}, ${alpha * 0.8})`;
+      } else {
+        const rgbEdge = hexToRgb(finalEdgeColor);
+        fillCol = bgL >= 0.5 ? 'rgba(248, 250, 252, 0.96)' : 'rgba(15, 23, 42, 0.96)';
+        borderCol = `rgba(${rgbEdge.r}, ${rgbEdge.g}, ${rgbEdge.b}, ${alpha * 0.85})`;
+      }
+
+      this.ctx.fillStyle = fillCol;
+      this.ctx.strokeStyle = borderCol;
+      this.ctx.lineWidth = 1.5;
+
       this.ctx.beginPath();
-      this.ctx.moveTo(ax, ay);
-      this.ctx.lineTo(ax - 10 * Math.cos(angle - Math.PI/8), ay - 10 * Math.sin(angle - Math.PI/8));
-      this.ctx.lineTo(ax - 10 * Math.cos(angle + Math.PI/8), ay - 10 * Math.sin(angle + Math.PI/8));
+      this.ctx.moveTo(p1x, p1y);
+      // Asymptotically sweep from thin source to thick body
+      this.ctx.quadraticCurveTo(
+        sx + Math.cos(angle) * 6 + nx * 9,
+        sy + Math.sin(angle) * 6 + ny * 9,
+        p5x, p5y
+      );
+      // Line to left flared shoulder base
+      this.ctx.lineTo(p3x, p3y);
+      // Sharp turn to the exact target boundary tip!
+      this.ctx.lineTo(tx, ty);
+      // Sharp turn back to right flared shoulder base
+      this.ctx.lineTo(p4x, p4y);
+      // Line back to the thick body right
+      this.ctx.lineTo(p6x, p6y);
+      // Asymptotically curve back to the thin source right
+      this.ctx.quadraticCurveTo(
+        sx + Math.cos(angle) * 6 - nx * 9,
+        sy + Math.sin(angle) * 6 - ny * 9,
+        p2x, p2y
+      );
       this.ctx.closePath();
       this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.restore();
 
-      // Draw the Thick Edge Capsule and embed the Text Name inside it
-      const midX = (sCoord.x + tCoord.x) / 2;
-      const midY = (sCoord.y + tCoord.y) / 2;
+      // Draw dynamic glowing flow particles moving along the exact center line representing state changes
+      if (!isRemovedEdge) {
+        edge.pulseOffset = (edge.pulseOffset + 0.006) % 1.0;
+        const px = sx + (tx - sx) * edge.pulseOffset;
+        const py = sy + (ty - sy) * edge.pulseOffset;
+
+        const pulseColor = finalEdgeColor === '#ffffff' ? '#00f6ff' : finalEdgeColor;
+        this.ctx.fillStyle = pulseColor;
+        this.ctx.save();
+        this.ctx.shadowColor = pulseColor;
+        this.ctx.shadowBlur = 8;
+        this.ctx.beginPath();
+        this.ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+
+      // Draw the Text Name directly inside the thick body of the arrow
+      const midX = (sx + tx) / 2;
+      const midY = (sy + ty) / 2;
       
       // Prevent edge label text from being upside down when pointing leftwards
       let textAngle = angle;
@@ -841,17 +962,7 @@ export class CanvasRenderer {
       this.ctx.translate(midX, midY);
       this.ctx.rotate(textAngle);
 
-      // Capsule Background (masks the underlying line)
-      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.15)' : (bgL >= 0.5 ? 'rgba(241, 245, 249, 0.96)' : 'rgba(30, 41, 59, 0.96)');
-      this.ctx.strokeStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (bgL >= 0.5 ? '#cbd5e1' : '#334155');
-      this.ctx.lineWidth = 1.5;
-
-      this.ctx.beginPath();
-      this.roundRect(-capsuleW / 2, -capsuleH / 2, capsuleW, capsuleH, 9);
-      this.ctx.fill();
-      this.ctx.stroke();
-
-      // Text Label centered inside the capsule
+      // Text Label centered inside the arrow conduit
       this.ctx.fillStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (bgL >= 0.5 ? '#475569' : '#94a3b8');
       this.ctx.font = 'bold 9px monospace';
       this.ctx.textAlign = 'center';
