@@ -1,3 +1,6 @@
+import { getClosestAllowedColor } from './ColorMath.js';
+
+// Holds Svelte UI Parser Definitions
 export interface NodeData {
   id: string;
   label: string;
@@ -7,6 +10,8 @@ export interface NodeData {
   isRemoved?: boolean;
   color?: string;
 }
+
+export type NodeId = string;
 
 export interface EdgeData {
   id: string;
@@ -19,6 +24,8 @@ export interface EdgeData {
   color?: string;
 }
 
+export type EdgeId = string;
+
 export interface MembraneData {
   id: string;
   label: string;
@@ -29,6 +36,8 @@ export interface MembraneData {
   color?: string;
 }
 
+export type MembraneId = string;
+
 export interface ParseResult {
   nodes: NodeData[];
   edges: EdgeData[];
@@ -38,9 +47,9 @@ export interface ParseResult {
 /**
  * A robust regex-based parser for a subset of H-Cypher topology syntax.
  * Matches:
- *  - Nodes: (node_id) or (node_id {prop: "val"})
- *  - Edges: (a) -[:REL_TYPE {prop: "val"}]-> (b) or (a) -> (b)
- *  - Membranes: Parenthetical lists like (a, b, c) with optional prefixed or suffixed names and properties in brackets/braces.
+ *  - Nodes: (node_id) or (node_id #ffffff) or (node_id {prop: "val"})
+ *  - Edges: (a) -[:REL_TYPE #00d2ff]-> (b) or (a) -> (b)
+ *  - Membranes: Parenthetical lists like (a, b, c) with optional prefixed or suffixed names and properties/colors.
  */
 export function parseHCypher(text: string): ParseResult {
   const nodesMap = new Map<string, NodeData>();
@@ -51,23 +60,28 @@ export function parseHCypher(text: string): ParseResult {
   const membraneNames = new Set<string>();
   const edgeLabels = new Set<string>();
 
-  // Matches membrane syntax with possible names and optional properties inside or outside brackets:
-  // e.g. [NAME {color: "blue"}](a, b, c) or (a, b)[NAME] {color: "blue"}
-  const refinedMembraneRegex = /(?:\[([a-zA-Z0-9_ \t]+)(?:\s*\{([^}]+)\})?\][ \t]*)?\(([^)]+)\)(?:[ \t]*\[([a-zA-Z0-9_ \t]+)(?:\s*\{([^}]+)\})?\])?(?:\s*\{([^}]+)\})?/g;
+  // Matches membrane syntax with possible names and optional properties/minimalist colors:
+  // e.g. [NAME #a855f7](a, b, c) or (a, b)[NAME #a855f7] or (a, b, c) #a855f7
+  const refinedMembraneRegex = /(?:\[([a-zA-Z0-9_ \t]+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\][ \t]*)?\(([^)]+)\)(?:[ \t]*\[([a-zA-Z0-9_ \t]+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\])?(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?/g;
   let unnamedCounter = 0;
   let preMembMatch;
   while ((preMembMatch = refinedMembraneRegex.exec(text)) !== null) {
     const prefix = preMembMatch[1];
-    const list = preMembMatch[3];
-    const suffix = preMembMatch[4];
+    const list = preMembMatch[4];
+    const suffix = preMembMatch[5];
+    
+    // Ignore braces inside parentheses (these are node/edge properties)
     if (list && (list.includes('{') || list.includes('}'))) continue;
+    // Commas are required to promote unnamed parentheticals to membranes, avoiding normal parenthesis collision
     if (!prefix && !suffix && (!list || !list.includes(','))) continue;
+
     const name = (prefix || suffix || `membrane_${unnamedCounter++}`).trim();
     membraneNames.add(name);
   }
 
-  // Refined edge regex that supports label and properties in brackets, e.g. -[:DEPENDS_ON {color: "cyan"}]->
-  const edgeRegex = /\((\w+)\)\s*(?:-\s*\[\s*:?(\w+)(?:\s*\{([^}]+)\})?\s*\]\s*->|->)\s*\((\w+)\)/g;
+  // Refined edge regex that supports label, properties, or minimalist colors inside brackets:
+  // e.g. -[:DEPENDS_ON #00d2ff]-> or -[:DEPENDS_ON {color: "cyan"}]->
+  const edgeRegex = /\((\w+)\)\s*(?:-\s*\[\s*:?(\w+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\s*\]\s*->|->)\s*\((\w+)\)/g;
   let preEdgeMatch;
   while ((preEdgeMatch = edgeRegex.exec(text)) !== null) {
     const relLabel = preEdgeMatch[2];
@@ -87,10 +101,13 @@ export function parseHCypher(text: string): ParseResult {
   while ((membMatch = refinedMembraneRegex.exec(text)) !== null) {
     const prefix = membMatch[1];
     const prefixProps = membMatch[2];
-    const list = membMatch[3];
-    const suffix = membMatch[4];
-    const suffixProps = membMatch[5];
-    const generalProps = membMatch[6];
+    const prefixColor = membMatch[3];
+    const list = membMatch[4];
+    const suffix = membMatch[5];
+    const suffixProps = membMatch[6];
+    const suffixColor = membMatch[7];
+    const generalProps = membMatch[8];
+    const generalColor = membMatch[9];
     
     if (list && (list.includes('{') || list.includes('}'))) continue;
     if (!prefix && !suffix && (!list || !list.includes(','))) continue;
@@ -124,7 +141,10 @@ export function parseHCypher(text: string): ParseResult {
         }
       }
     }
-    const color = properties.color;
+
+    // Extract color: prefers minimalist #hex token, falls back to property, defaults to undefined (white)
+    const rawColor = prefixColor || suffixColor || generalColor || properties.color;
+    const color = rawColor ? getClosestAllowedColor(rawColor) : undefined;
 
     membranes.push({
       id,
@@ -143,7 +163,8 @@ export function parseHCypher(text: string): ParseResult {
     const source = edgeMatch[1];
     const relLabel = edgeMatch[2] || 'DEPENDS_ON';
     const propsStr = edgeMatch[3];
-    const target = edgeMatch[4];
+    const rawColor = edgeMatch[4];
+    const target = edgeMatch[5];
 
     if (!isMembraneOrEdge(source) && !nodesMap.has(source)) {
       nodesMap.set(source, { id: source, label: source.toUpperCase(), type: 'atom' });
@@ -162,7 +183,8 @@ export function parseHCypher(text: string): ParseResult {
         }
       }
     }
-    const color = properties.color;
+
+    const color = rawColor ? getClosestAllowedColor(rawColor) : (properties.color ? getClosestAllowedColor(properties.color) : undefined);
 
     edges.push({
       id: `edge_${source}_${target}_${edgeIdCounter++}`,
@@ -174,12 +196,13 @@ export function parseHCypher(text: string): ParseResult {
     });
   }
 
-  // 3. Parse explicit node declarations
-  const nodeRegex = /\((\w+)(?:\s*\{([^}]+)\})?\)/g;
+  // 3. Parse explicit node declarations: (id #color) or (id {color: "..."})
+  const nodeRegex = /\((\w+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\)/g;
   let nodeMatch;
   while ((nodeMatch = nodeRegex.exec(text)) !== null) {
     const id = nodeMatch[1];
     const propsStr = nodeMatch[2];
+    const rawColor = nodeMatch[3];
 
     if (isMembraneOrEdge(id)) continue;
 
@@ -194,13 +217,15 @@ export function parseHCypher(text: string): ParseResult {
       }
     }
 
-    const color = properties.color;
+    const color = rawColor ? getClosestAllowedColor(rawColor) : (properties.color ? getClosestAllowedColor(properties.color) : undefined);
 
     const existing = nodesMap.get(id);
     if (existing) {
+      if (color) {
+        existing.color = color;
+      }
       if (Object.keys(properties).length) {
         existing.properties = properties;
-        existing.color = color;
       }
     } else {
       nodesMap.set(id, {

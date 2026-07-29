@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { parseHCypher } from './lib/HCypherParser';
   import { CanvasRenderer } from './lib/CanvasRenderer';
+  import HCypherEditor from './lib/HCypherEditor.svelte';
 
   // 1. Pre-populated H-Cypher code matching the Holds stage-0 kernel
   let hCypherCode = $state(`// Holds Kernel Topology Rules
@@ -259,11 +260,7 @@ MATCH {
       </div>
       
       <div class="editor-container">
-        <textarea 
-          bind:value={hCypherCode}
-          placeholder="// Enter H-Cypher declarations..."
-          spellcheck="false"
-        ></textarea>
+        <HCypherEditor bind:value={hCypherCode} bgColor={currentBgColor} />
       </div>
 
       <!-- Quick inject buttons / helpful syntax -->
@@ -560,26 +557,6 @@ MATCH {
     position: relative;
     padding: 0;
     background-color: #0d0e15;
-  }
-
-  textarea {
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    border: none;
-    resize: none;
-    outline: none;
-    color: #a5f3fc;
-    font-family: 'Fira Code', ui-monospace, monospace;
-    font-size: 13px;
-    line-height: 1.6;
-    padding: 24px;
-    box-sizing: border-box;
-  }
-
-  textarea::placeholder {
-    color: #45a29e;
-    opacity: 0.5;
   }
 
   .editor-footer {
