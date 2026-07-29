@@ -186,8 +186,14 @@
         <span class="membrane-bracket">{token.content}</span>
       {:else if token.type === 'color'}
         {#if isCursorClose(token.start, token.end)}
-          <!-- If cursor is close, show raw text for editing -->
-          <span class="raw-color">{token.content}</span>
+          <!-- If cursor is close, show raw text for editing with its defined color -->
+          <span 
+            class="raw-color" 
+            style:--raw-color={token.content}
+            style:background-color={`${token.content}1e`}
+          >
+            {token.content}
+          </span>
         {:else}
           <!-- Otherwise, mask and render our beautiful abstract ColorTextTag -->
           <ColorTextTag 
@@ -291,10 +297,9 @@
   }
 
   .raw-color {
-    color: #22c55e; /* Green edit state */
+    color: var(--raw-color) !important;
     font-weight: bold;
     text-decoration: underline;
-    background-color: rgba(34, 197, 94, 0.08);
     padding: 0 2px;
     border-radius: 2px;
   }
