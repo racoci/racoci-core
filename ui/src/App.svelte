@@ -139,6 +139,76 @@ MATCH {
     hCypherCode = `(kernel) -> (parser)`;
     selectedNode = null;
   }
+
+  // 4. Customization state & logic
+  let currentBgColor = $state('#0b0f19');
+
+  // Watch background color changes and update CanvasRenderer
+  $effect(() => {
+    if (renderer && currentBgColor) {
+      renderer.setBackgroundColor(currentBgColor);
+    }
+  });
+
+  function handleUpdateColor(color: string) {
+    if (selectedNode) {
+      selectedNode.color = color;
+      
+      // Update in H-Cypher text!
+      updateElementColorInText(selectedNode.id, selectedNode.elementType || 'node', color);
+    }
+  }
+
+  function updateElementColorInText(id: string, elementType: 'node' | 'edge', newColor: string) {
+    if (elementType === 'node') {
+      // 1. Try to find explicit declaration: (id { ... })
+      const propsRegex = new RegExp(`\\(${id}\\s*\\{([^}]+)\\}\\)`);
+      if (propsRegex.test(hCypherCode)) {
+        hCypherCode = hCypherCode.replace(propsRegex, (match, props) => {
+          if (props.includes('color:')) {
+            return `(${id} {${props.replace(/color:\s*["']#[0-9a-fA-F]{6}["']|color:\s*["']\w+["']/, `color: "${newColor}"`)}})`;
+          } else {
+            return `(${id} {${props.trim()}, color: "${newColor}"})`;
+          }
+        });
+        return;
+      }
+      // 2. Try to find simple declaration: (id) (not followed by -> or part of -[:...]-> )
+      const nodeRegex = new RegExp(`\\(${id}\\)`);
+      if (nodeRegex.test(hCypherCode)) {
+        hCypherCode = hCypherCode.replace(nodeRegex, `(${id} {color: "${newColor}"})`);
+        return;
+      }
+      // 3. Fallback: append node declaration at the end
+      hCypherCode += `\n(${id} {color: "${newColor}"})`;
+    } else if (elementType === 'edge') {
+      const source = selectedNode.source;
+      const target = selectedNode.target;
+      const label = selectedNode.label;
+
+      const edgeRelRegex = new RegExp(`\\(${source}\\)\\s*-\\s*\\[\\s*:?${label}(?:\\s*\\{([^}]+)\\})?\\s*\\]\\s*->\\s*\\(${target}\\)`);
+      if (edgeRelRegex.test(hCypherCode)) {
+        hCypherCode = hCypherCode.replace(edgeRelRegex, (match, props) => {
+          if (props) {
+            if (props.includes('color:')) {
+              return `(${source}) -[:${label} {${props.replace(/color:\s*["']#[0-9a-fA-F]{6}["']|color:\s*["']\w+["']/, `color: "${newColor}"`)}}]-> (${target})`;
+            } else {
+              return `(${source}) -[:${label} {${props.trim()}, color: "${newColor}"}]-> (${target})`;
+            }
+          } else {
+            return `(${source}) -[:${label} {color: "${newColor}"}]-> (${target})`;
+          }
+        });
+        return;
+      }
+
+      const simpleEdgeRegex = new RegExp(`\\(${source}\\)\\s*->\\s*\\(${target}\\)`);
+      if (simpleEdgeRegex.test(hCypherCode)) {
+        hCypherCode = hCypherCode.replace(simpleEdgeRegex, `(${source}) -[:${label} {color: "${newColor}"}]-> (${target})`);
+        return;
+      }
+    }
+  }
 </script>
 
 <div class="workspace">
@@ -152,6 +222,16 @@ MATCH {
     
     <!-- Real-time Status Telemetry indicators -->
     <div class="telemetry">
+      <div class="stat">
+        <span class="stat-label">CANVAS BG:</span>
+        <select class="bg-select" bind:value={currentBgColor}>
+          <option value="#0b0f19">Space Dark</option>
+          <option value="#05070a">Deep Black</option>
+          <option value="#f8fafc">Clean Light</option>
+          <option value="#1e293b">Nebula Grey</option>
+          <option value="#fdf6e3">Solarized Cream</option>
+        </select>
+      </div>
       <div class="stat">
         <span class="stat-label">BUS STATE:</span>
         <span class="stat-val status-highlight">{systemStatus}</span>
@@ -209,14 +289,14 @@ MATCH {
       </div>
 
       <!-- Interactive Canvas Area -->
-      <div class="canvas-container" bind:this={containerElement}>
+      <div class="canvas-container" bind:this={containerElement} style="background-color: {currentBgColor}">
         <canvas bind:this={canvasElement}></canvas>
 
-        <!-- Selected Node Inspector overlay on the canvas -->
+        <!-- Selected Element Inspector overlay on the canvas -->
         {#if selectedNode}
           <div class="inspector-card">
             <div class="card-header">
-              <h3>Atom Properties</h3>
+              <h3>{selectedNode.elementType === 'edge' ? 'Edge' : 'Atom'} Properties</h3>
               <button class="close-btn" onclick={() => selectedNode = null}>×</button>
             </div>
             <div class="card-body">
@@ -228,25 +308,38 @@ MATCH {
                 <span class="prop-key">LABEL:</span>
                 <span class="prop-val monospace">{selectedNode.label}</span>
               </div>
-              <div class="prop-row">
-                <span class="prop-key">TYPE:</span>
-                <span class="prop-val badge-type">{selectedNode.type}</span>
-              </div>
+              {#if selectedNode.elementType === 'edge'}
+                <div class="prop-row">
+                  <span class="prop-key">SOURCE:</span>
+                  <span class="prop-val monospace">{selectedNode.source}</span>
+                </div>
+                <div class="prop-row">
+                  <span class="prop-key">TARGET:</span>
+                  <span class="prop-val monospace">{selectedNode.target}</span>
+                </div>
+              {:else}
+                <div class="prop-row">
+                  <span class="prop-key">TYPE:</span>
+                  <span class="prop-val badge-type">{selectedNode.type}</span>
+                </div>
+              {/if}
               <div class="prop-row">
                 <span class="prop-key">STATE:</span>
                 <span class="prop-val" style="color: {selectedNode.isRemoved ? '#ef4444' : '#22c55e'}">
-                  {selectedNode.isRemoved ? 'RESIDUE_GHOST' : 'ACTIVE_ATOM'}
+                  {selectedNode.isRemoved ? 'RESIDUE_GHOST' : 'ACTIVE_ELEMENT'}
                 </span>
               </div>
               
               {#if selectedNode.properties}
                 <div class="props-sub-section">
-                  <h4>Node Custom Attributes</h4>
+                  <h4>Custom Attributes</h4>
                   {#each Object.entries(selectedNode.properties) as [key, val]}
-                    <div class="prop-row indent">
-                      <span class="prop-key">{key}:</span>
-                      <span class="prop-val italic">"{val}"</span>
-                    </div>
+                    {#if key !== 'color'}
+                      <div class="prop-row indent">
+                        <span class="prop-key">{key}:</span>
+                        <span class="prop-val italic">"{val}"</span>
+                      </div>
+                    {/if}
                   {/each}
                 </div>
               {:else}
@@ -254,10 +347,27 @@ MATCH {
                   <span class="no-props">No supplementary attributes.</span>
                 </div>
               {/if}
-              
-              <div class="coordinates">
-                <span>COORD: X:{Math.round(selectedNode.x)}px Y:{Math.round(selectedNode.y)}px</span>
+
+              <!-- Interactive Color Customizer Palette Picker -->
+              <div class="props-sub-section">
+                <h4>Color Palette Picker</h4>
+                <div class="color-palette">
+                  {#each ['#ffffff', '#00d2ff', '#a855f7', '#22c55e', '#eab308', '#f97316', '#ec4899'] as color}
+                    <button 
+                      class="color-dot {selectedNode.color === color || (!selectedNode.color && color === '#ffffff') ? 'active' : ''}" 
+                      style="background-color: {color};"
+                      title={color}
+                      onclick={() => handleUpdateColor(color)}
+                    ></button>
+                  {/each}
+                </div>
               </div>
+              
+              {#if selectedNode.x !== undefined && selectedNode.y !== undefined}
+                <div class="coordinates">
+                  <span>COORD: X:{Math.round(selectedNode.x)}px Y:{Math.round(selectedNode.y)}px</span>
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
@@ -703,5 +813,53 @@ MATCH {
     .telemetry {
       gap: 12px;
     }
+  }
+
+  /* Background select custom style */
+  .bg-select {
+    background-color: #12131c;
+    border: 1px solid #1f2833;
+    color: #66fcf1;
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+    font-weight: bold;
+  }
+
+  .bg-select:focus {
+    border-color: #66fcf1;
+  }
+
+  /* Color Palette Selector */
+  .color-palette {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .color-dot {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.15s ease-in-out;
+    box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.4);
+  }
+
+  .color-dot:hover {
+    transform: scale(1.2);
+    border-color: #ffffff;
+  }
+
+  .color-dot.active {
+    transform: scale(1.15);
+    border-color: #66fcf1;
+    box-shadow: 0 0 8px rgba(102, 252, 241, 0.6), inset 0 0 4px rgba(0, 0, 0, 0.4);
   }
 </style>

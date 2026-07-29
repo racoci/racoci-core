@@ -35,3 +35,6 @@ Thumbs.db
 dist/
 build/
 out/
+
+# --- Compiled UI Test Artifacts ---
+ui/src/lib/*.js

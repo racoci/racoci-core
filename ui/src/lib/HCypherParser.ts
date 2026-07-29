@@ -5,6 +5,7 @@ export interface NodeData {
   properties?: Record<string, string>;
   isNew?: boolean;
   isRemoved?: boolean;
+  color?: string;
 }
 
 export interface EdgeData {
@@ -14,6 +15,8 @@ export interface EdgeData {
   label: string;
   isNew?: boolean;
   isRemoved?: boolean;
+  properties?: Record<string, string>;
+  color?: string;
 }
 
 export interface MembraneData {
@@ -22,6 +25,8 @@ export interface MembraneData {
   nodeIds: string[];
   isNew?: boolean;
   isRemoved?: boolean;
+  properties?: Record<string, string>;
+  color?: string;
 }
 
 export interface ParseResult {
@@ -34,8 +39,8 @@ export interface ParseResult {
  * A robust regex-based parser for a subset of H-Cypher topology syntax.
  * Matches:
  *  - Nodes: (node_id) or (node_id {prop: "val"})
- *  - Edges: (a) -[:REL_TYPE]-> (b) or (a) -> (b)
- *  - Membranes: Parenthetical lists like (a, b, c) with optional prefixed or suffixed names in brackets.
+ *  - Edges: (a) -[:REL_TYPE {prop: "val"}]-> (b) or (a) -> (b)
+ *  - Membranes: Parenthetical lists like (a, b, c) with optional prefixed or suffixed names and properties in brackets/braces.
  */
 export function parseHCypher(text: string): ParseResult {
   const nodesMap = new Map<string, NodeData>();
@@ -46,20 +51,23 @@ export function parseHCypher(text: string): ParseResult {
   const membraneNames = new Set<string>();
   const edgeLabels = new Set<string>();
 
-  // Use horizontal whitespace matching [ \t]* instead of \s* to prevent matching across newlines
-  const refinedMembraneRegex = /(?:\[([a-zA-Z0-9_ \t]+)\][ \t]*)?\(([^)]+)\)(?:[ \t]*\[([a-zA-Z0-9_ \t]+)\])?/g;
+  // Matches membrane syntax with possible names and optional properties inside or outside brackets:
+  // e.g. [NAME {color: "blue"}](a, b, c) or (a, b)[NAME] {color: "blue"}
+  const refinedMembraneRegex = /(?:\[([a-zA-Z0-9_ \t]+)(?:\s*\{([^}]+)\})?\][ \t]*)?\(([^)]+)\)(?:[ \t]*\[([a-zA-Z0-9_ \t]+)(?:\s*\{([^}]+)\})?\])?(?:\s*\{([^}]+)\})?/g;
   let unnamedCounter = 0;
   let preMembMatch;
   while ((preMembMatch = refinedMembraneRegex.exec(text)) !== null) {
     const prefix = preMembMatch[1];
-    const list = preMembMatch[2];
-    const suffix = preMembMatch[3];
-    if (!prefix && !suffix && !list.includes(',')) continue;
+    const list = preMembMatch[3];
+    const suffix = preMembMatch[4];
+    if (list && (list.includes('{') || list.includes('}'))) continue;
+    if (!prefix && !suffix && (!list || !list.includes(','))) continue;
     const name = (prefix || suffix || `membrane_${unnamedCounter++}`).trim();
     membraneNames.add(name);
   }
 
-  const edgeRegex = /\((\w+)\)\s*(?:-\s*\[\s*:?(\w+)\s*\]\s*->|->)\s*\((\w+)\)/g;
+  // Refined edge regex that supports label and properties in brackets, e.g. -[:DEPENDS_ON {color: "cyan"}]->
+  const edgeRegex = /\((\w+)\)\s*(?:-\s*\[\s*:?(\w+)(?:\s*\{([^}]+)\})?\s*\]\s*->|->)\s*\((\w+)\)/g;
   let preEdgeMatch;
   while ((preEdgeMatch = edgeRegex.exec(text)) !== null) {
     const relLabel = preEdgeMatch[2];
@@ -78,9 +86,14 @@ export function parseHCypher(text: string): ParseResult {
   let membMatch;
   while ((membMatch = refinedMembraneRegex.exec(text)) !== null) {
     const prefix = membMatch[1];
-    const list = membMatch[2];
-    const suffix = membMatch[3];
-    if (!prefix && !suffix && !list.includes(',')) continue;
+    const prefixProps = membMatch[2];
+    const list = membMatch[3];
+    const suffix = membMatch[4];
+    const suffixProps = membMatch[5];
+    const generalProps = membMatch[6];
+    
+    if (list && (list.includes('{') || list.includes('}'))) continue;
+    if (!prefix && !suffix && (!list || !list.includes(','))) continue;
 
     const id = (prefix || suffix || `membrane_${unnamedActualCounter++}`).trim();
     const label = id;
@@ -100,10 +113,25 @@ export function parseHCypher(text: string): ParseResult {
       }
     }
 
+    const propsStr = prefixProps || suffixProps || generalProps;
+    const properties: Record<string, string> = {};
+    if (propsStr) {
+      const propPairs = propsStr.split(',');
+      for (const pair of propPairs) {
+        const [k, v] = pair.split(':').map(s => s.trim());
+        if (k && v) {
+          properties[k] = v.replace(/['"]/g, ''); // remove quotes
+        }
+      }
+    }
+    const color = properties.color;
+
     membranes.push({
       id,
       label,
       nodeIds,
+      properties: Object.keys(properties).length ? properties : undefined,
+      color,
     });
   }
 
@@ -114,7 +142,8 @@ export function parseHCypher(text: string): ParseResult {
   while ((edgeMatch = edgeRegex.exec(text)) !== null) {
     const source = edgeMatch[1];
     const relLabel = edgeMatch[2] || 'DEPENDS_ON';
-    const target = edgeMatch[3];
+    const propsStr = edgeMatch[3];
+    const target = edgeMatch[4];
 
     if (!isMembraneOrEdge(source) && !nodesMap.has(source)) {
       nodesMap.set(source, { id: source, label: source.toUpperCase(), type: 'atom' });
@@ -123,11 +152,25 @@ export function parseHCypher(text: string): ParseResult {
       nodesMap.set(target, { id: target, label: target.toUpperCase(), type: 'atom' });
     }
 
+    const properties: Record<string, string> = {};
+    if (propsStr) {
+      const propPairs = propsStr.split(',');
+      for (const pair of propPairs) {
+        const [k, v] = pair.split(':').map(s => s.trim());
+        if (k && v) {
+          properties[k] = v.replace(/['"]/g, ''); // remove quotes
+        }
+      }
+    }
+    const color = properties.color;
+
     edges.push({
       id: `edge_${source}_${target}_${edgeIdCounter++}`,
       source,
       target,
       label: relLabel,
+      properties: Object.keys(properties).length ? properties : undefined,
+      color,
     });
   }
 
@@ -151,10 +194,13 @@ export function parseHCypher(text: string): ParseResult {
       }
     }
 
+    const color = properties.color;
+
     const existing = nodesMap.get(id);
     if (existing) {
       if (Object.keys(properties).length) {
         existing.properties = properties;
+        existing.color = color;
       }
     } else {
       nodesMap.set(id, {
@@ -162,6 +208,7 @@ export function parseHCypher(text: string): ParseResult {
         label: id.toUpperCase(),
         type: 'atom',
         properties: Object.keys(properties).length ? properties : undefined,
+        color,
       });
     }
   }

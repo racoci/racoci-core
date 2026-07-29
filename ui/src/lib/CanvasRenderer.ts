@@ -1,4 +1,5 @@
 import type { NodeData, EdgeData, MembraneData } from './HCypherParser';
+import { applyContrastProtection, getClosestAllowedColor, getRelativeLuminance, hexToRgb } from './ColorMath';
 
 interface VisualNode {
   id: string;
@@ -29,6 +30,7 @@ interface VisualEdge {
   isNew: boolean;
   isRemoved: boolean;
   pulseOffset: number; // for flow animation
+  color?: string;
 }
 
 interface VisualMembrane {
@@ -39,6 +41,7 @@ interface VisualMembrane {
   isNew: boolean;
   isRemoved: boolean;
   spin?: number;
+  color?: string;
 }
 
 export class CanvasRenderer {
@@ -54,6 +57,7 @@ export class CanvasRenderer {
   // Dragging state
   private draggedNodeId: string | null = null;
   private selectedNodeId: string | null = null;
+  private selectedEdgeId: string | null = null;
 
   // Visual/Grid parameters
   private gridOffset = { x: 0, y: 0 };
@@ -61,6 +65,7 @@ export class CanvasRenderer {
   private frameCount = 0;
   private executionIllumination = false;
   private illuminatedPath: string[] = []; // node IDs
+  private backgroundColor = '#0b0f19'; // Default background color
 
   // Callbacks
   private onSelectNode: (node: VisualNode | null) => void;
@@ -86,6 +91,14 @@ export class CanvasRenderer {
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+
+  public setBackgroundColor(color: string) {
+    this.backgroundColor = color;
+  }
+
+  public getBackgroundColor(): string {
+    return this.backgroundColor;
   }
 
   /**
@@ -144,6 +157,7 @@ export class CanvasRenderer {
           ...existing,
           label: pn.label,
           properties: pn.properties,
+          color: pn.color ? getClosestAllowedColor(pn.color) : existing.color,
           isNew: pn.isNew || false,
         });
       } else {
@@ -160,8 +174,8 @@ export class CanvasRenderer {
           vx: 0,
           vy: 0,
           radius: 24,
-          color: '#00d2ff', // Cyan
-          glowColor: 'rgba(0, 210, 255, 0.6)',
+          color: pn.color ? getClosestAllowedColor(pn.color) : '#ffffff', // Default to white
+          glowColor: 'rgba(255, 255, 255, 0.6)',
           alpha: 1.0,
           isNew: true, // will trigger fade-in glow
           isRemoved: false,
@@ -193,6 +207,7 @@ export class CanvasRenderer {
         isNew: pe.isNew || false,
         isRemoved: pe.isRemoved || false,
         pulseOffset: existing ? existing.pulseOffset : Math.random(),
+        color: pe.color ? getClosestAllowedColor(pe.color) : '#ffffff', // Default to white
       };
     });
 
@@ -205,6 +220,7 @@ export class CanvasRenderer {
         alpha: 1.0,
         isNew: pm.isNew || false,
         isRemoved: pm.isRemoved || false,
+        color: pm.color ? getClosestAllowedColor(pm.color) : '#ffffff', // Default to white
       };
     });
   }
@@ -438,6 +454,10 @@ export class CanvasRenderer {
 
     this.ctx.clearRect(0, 0, width, height);
 
+    // Draw background color
+    this.ctx.fillStyle = this.backgroundColor;
+    this.ctx.fillRect(0, 0, width, height);
+
     // Save context for transform/zoom
     this.ctx.save();
 
@@ -468,7 +488,14 @@ export class CanvasRenderer {
    * Draw the scrolling futuristic spatial coordinate grid
    */
   private drawGrid(width: number, height: number) {
-    this.ctx.strokeStyle = '#1e202c';
+    const bgRgb = hexToRgb(this.backgroundColor);
+    const bgL = getRelativeLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
+
+    const gridLineColor = bgL >= 0.5 ? 'rgba(0, 0, 0, 0.08)' : '#1e202c';
+    const axisLineColor = bgL >= 0.5 ? 'rgba(0, 0, 0, 0.16)' : '#2d3142';
+    const tickTextColor = bgL >= 0.5 ? 'rgba(0, 0, 0, 0.45)' : '#4f566b';
+
+    this.ctx.strokeStyle = gridLineColor;
     this.ctx.lineWidth = 1.0;
 
     const gridSize = 40;
@@ -490,7 +517,7 @@ export class CanvasRenderer {
     this.ctx.stroke();
 
     // Add subtle matrix-like crosshairs or center lines
-    this.ctx.strokeStyle = '#2d3142';
+    this.ctx.strokeStyle = axisLineColor;
     this.ctx.lineWidth = 1.5;
     this.ctx.beginPath();
     this.ctx.moveTo(width / 2, 0);
@@ -500,7 +527,7 @@ export class CanvasRenderer {
     this.ctx.stroke();
 
     // Draw little tick indices on center lines
-    this.ctx.fillStyle = '#4f566b';
+    this.ctx.fillStyle = tickTextColor;
     this.ctx.font = '9px monospace';
     for (let x = 0; x < width; x += 120) {
       this.ctx.fillText(`${x}λ`, x + 5, height / 2 - 5);
@@ -518,14 +545,19 @@ export class CanvasRenderer {
     const ry = height - 180;
     const rSize = 160;
 
+    const bgL = getRelativeLuminance(hexToRgb(this.backgroundColor).r, hexToRgb(this.backgroundColor).g, hexToRgb(this.backgroundColor).b);
+    const borderCol = bgL >= 0.5 ? 'rgba(220, 38, 38, 0.75)' : 'rgba(239, 68, 68, 0.45)';
+    const fillCol = bgL >= 0.5 ? 'rgba(220, 38, 38, 0.03)' : 'rgba(239, 68, 68, 0.05)';
+    const textCol = bgL >= 0.5 ? 'rgba(220, 38, 38, 0.9)' : 'rgba(239, 68, 68, 0.8)';
+
     // Outer glow membrane
-    this.ctx.strokeStyle = 'rgba(239, 68, 68, 0.45)'; // Translucent Neon Red
+    this.ctx.strokeStyle = borderCol; // Translucent Neon Red
     this.ctx.setLineDash([4, 4]);
     this.ctx.lineWidth = 2;
-    this.ctx.fillStyle = 'rgba(239, 68, 68, 0.05)';
+    this.ctx.fillStyle = fillCol;
 
     this.ctx.save();
-    this.ctx.shadowColor = 'rgba(239, 68, 68, 0.5)';
+    this.ctx.shadowColor = borderCol;
     this.ctx.shadowBlur = 10;
     
     // Draw rounded rectangle
@@ -538,11 +570,11 @@ export class CanvasRenderer {
     this.ctx.setLineDash([]); // Reset line dash
 
     // Labels
-    this.ctx.fillStyle = 'rgba(239, 68, 68, 0.8)';
+    this.ctx.fillStyle = textCol;
     this.ctx.font = 'bold 11px monospace';
     this.ctx.fillText('sys::residue', rx + 12, ry + 22);
     this.ctx.font = '9px monospace';
-    this.ctx.fillStyle = 'rgba(239, 68, 68, 0.5)';
+    this.ctx.fillStyle = bgL >= 0.5 ? 'rgba(220, 38, 38, 0.6)' : 'rgba(239, 68, 68, 0.5)';
     this.ctx.fillText('TOPOLOGICAL GHOST CHANNELS', rx + 12, ry + 36);
   }
 
@@ -592,31 +624,22 @@ export class CanvasRenderer {
         if (d > maxDist) maxDist = d;
       });
 
-      // Setup styles based on Membrane spin vector orientation (+1 Euclidean, -1 Klein)
-      let gradColorStart = '';
-      let gradColorMid = '';
-      let strokeColor = '';
-      let shadowColor = '';
+      // Get membrane custom/assigned color (defaulting to white)
+      const baseMembColor = m.color || '#ffffff';
+      const finalMembColor = applyContrastProtection(this.backgroundColor, baseMembColor);
+      const rgb = hexToRgb(finalMembColor);
 
-      if (m.spin === -1) {
-        // Cyan/Teal non-orientable theme
-        gradColorStart = 'rgba(0, 210, 255, 0.22)';
-        gradColorMid = 'rgba(168, 85, 247, 0.08)'; // slight violet twist
-        strokeColor = 'rgba(0, 210, 255, 0.75)';
-        shadowColor = 'rgba(0, 210, 255, 0.45)';
-      } else {
-        // Deep Violet Euclidean theme
-        gradColorStart = 'rgba(168, 85, 247, 0.25)';
-        gradColorMid = 'rgba(168, 85, 247, 0.11)';
-        strokeColor = 'rgba(168, 85, 247, 0.75)';
-        shadowColor = 'rgba(168, 85, 247, 0.45)';
-      }
+      // Create rich organic radial gradient dynamically!
+      const gradColorStart = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`;
+      const gradColorMid = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.08)`;
+      const strokeColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.75)`;
+      const shadowColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.45)`;
 
       // Create the organic radial gradient: dense at centroid, radially fading close to the nodes/borders
       const grad = this.ctx.createRadialGradient(cx, cy, 0, cx, cy, maxDist);
       grad.addColorStop(0, gradColorStart);
       grad.addColorStop(0.5, gradColorMid);
-      grad.addColorStop(1, 'rgba(168, 85, 247, 0.01)'); // fades to transparent at perimeters
+      grad.addColorStop(1, `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.01)`); // fades to transparent at perimeters
 
       this.ctx.save();
       this.ctx.lineWidth = 1.5;
@@ -647,7 +670,7 @@ export class CanvasRenderer {
         }
       });
 
-      this.ctx.fillStyle = m.spin === -1 ? 'rgba(0, 210, 255, 0.9)' : 'rgba(168, 85, 247, 0.9)';
+      this.ctx.fillStyle = finalMembColor;
       this.ctx.font = 'bold 9px monospace';
       this.ctx.fillText(`MEMBRANE [ ${m.label} ]`, topX - 45, topY - 12);
     });
@@ -669,14 +692,25 @@ export class CanvasRenderer {
 
       const isRemovedEdge = edge.isRemoved || this.isEntityRemoved(edge.source) || this.isEntityRemoved(edge.target);
 
+      // Get edge custom/assigned color (defaulting to white)
+      const baseEdgeColor = edge.color || '#ffffff';
+      const finalEdgeColor = applyContrastProtection(this.backgroundColor, baseEdgeColor);
+      const bgL = getRelativeLuminance(hexToRgb(this.backgroundColor).r, hexToRgb(this.backgroundColor).g, hexToRgb(this.backgroundColor).b);
+
       // Styles
       this.ctx.lineWidth = 2.0;
       if (isRemovedEdge) {
-        this.ctx.strokeStyle = `rgba(239, 68, 68, ${alpha * 0.45})`; // Translucent Red
+        const finalRemovedColor = applyContrastProtection(this.backgroundColor, '#ef4444');
+        this.ctx.strokeStyle = `rgba(${hexToRgb(finalRemovedColor).r}, ${hexToRgb(finalRemovedColor).g}, ${hexToRgb(finalRemovedColor).b}, ${alpha * 0.45})`; // Translucent Red
       } else if (edge.isNew) {
-        this.ctx.strokeStyle = `rgba(34, 197, 94, ${alpha * 0.8})`; // Green glow for new
+        const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
+        this.ctx.strokeStyle = `rgba(${hexToRgb(finalNewColor).r}, ${hexToRgb(finalNewColor).g}, ${hexToRgb(finalNewColor).b}, ${alpha * 0.8})`; // Green glow for new
       } else {
-        this.ctx.strokeStyle = `rgba(45, 49, 66, ${alpha * 0.85})`; // Dark metallic border
+        if (bgL >= 0.5) {
+          this.ctx.strokeStyle = finalEdgeColor === '#ffffff' ? `rgba(0, 0, 0, ${alpha * 0.25})` : `rgba(${hexToRgb(finalEdgeColor).r}, ${hexToRgb(finalEdgeColor).g}, ${hexToRgb(finalEdgeColor).b}, ${alpha * 0.85})`;
+        } else {
+          this.ctx.strokeStyle = finalEdgeColor === '#ffffff' ? `rgba(255, 255, 255, ${alpha * 0.25})` : `rgba(${hexToRgb(finalEdgeColor).r}, ${hexToRgb(finalEdgeColor).g}, ${hexToRgb(finalEdgeColor).b}, ${alpha * 0.85})`;
+        }
       }
 
       // Draw standard curved ribbon / edge line
@@ -691,9 +725,10 @@ export class CanvasRenderer {
         const px = sCoord.x + (tCoord.x - sCoord.x) * edge.pulseOffset;
         const py = sCoord.y + (tCoord.y - sCoord.y) * edge.pulseOffset;
 
-        this.ctx.fillStyle = '#00f6ff'; // Neon blue pulse
+        const pulseColor = finalEdgeColor === '#ffffff' ? '#00f6ff' : finalEdgeColor;
+        this.ctx.fillStyle = pulseColor;
         this.ctx.save();
-        this.ctx.shadowColor = '#00f6ff';
+        this.ctx.shadowColor = pulseColor;
         this.ctx.shadowBlur = 8;
         this.ctx.beginPath();
         this.ctx.arc(px, py, 3.5, 0, Math.PI * 2);
@@ -782,7 +817,7 @@ export class CanvasRenderer {
       const ax = tCoord.x - Math.cos(angle) * arrowDist;
       const ay = tCoord.y - Math.sin(angle) * arrowDist;
 
-      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.7)' : '#3b82f6';
+      this.ctx.fillStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (finalEdgeColor === '#ffffff' ? '#3b82f6' : finalEdgeColor);
       this.ctx.beginPath();
       this.ctx.moveTo(ax, ay);
       this.ctx.lineTo(ax - 10 * Math.cos(angle - Math.PI/8), ay - 10 * Math.sin(angle - Math.PI/8));
@@ -807,8 +842,8 @@ export class CanvasRenderer {
       this.ctx.rotate(textAngle);
 
       // Capsule Background (masks the underlying line)
-      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.15)' : 'rgba(30, 41, 59, 0.96)';
-      this.ctx.strokeStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.65)' : '#334155';
+      this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.15)' : (bgL >= 0.5 ? 'rgba(241, 245, 249, 0.96)' : 'rgba(30, 41, 59, 0.96)');
+      this.ctx.strokeStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (bgL >= 0.5 ? '#cbd5e1' : '#334155');
       this.ctx.lineWidth = 1.5;
 
       this.ctx.beginPath();
@@ -817,7 +852,7 @@ export class CanvasRenderer {
       this.ctx.stroke();
 
       // Text Label centered inside the capsule
-      this.ctx.fillStyle = isRemovedEdge ? '#fca5a5' : '#94a3b8';
+      this.ctx.fillStyle = isRemovedEdge ? applyContrastProtection(this.backgroundColor, '#ef4444') : (bgL >= 0.5 ? '#475569' : '#94a3b8');
       this.ctx.font = 'bold 9px monospace';
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
@@ -837,23 +872,39 @@ export class CanvasRenderer {
       this.ctx.save();
       this.ctx.globalAlpha = node.alpha;
 
+      const baseColor = node.color || '#ffffff';
+      const borderCol = applyContrastProtection(this.backgroundColor, baseColor);
+      const bgL = getRelativeLuminance(hexToRgb(this.backgroundColor).r, hexToRgb(this.backgroundColor).g, hexToRgb(this.backgroundColor).b);
+
       // Base Node Color mapping based on states
-      let borderCol = '#00d2ff'; // Cyan default
       let bgGradStart = '#0f172a'; // Deep slate
       let bgGradEnd = '#1e293b';
 
       if (node.isRemoved) {
-        borderCol = '#ef4444'; // Neon Red
-        bgGradStart = '#1a0505';
-        bgGradEnd = '#2e0a0a';
-      } else if (node.id === this.selectedNodeId) {
-        borderCol = '#e0f2fe'; // Super electric light blue-white
-        bgGradStart = '#1e3a8a'; // Deep blue
-        bgGradEnd = '#1e40af';
-      } else if (node.isNew) {
-        borderCol = '#22c55e'; // Bright Green for additions
-        bgGradStart = '#052e16';
-        bgGradEnd = '#14532d';
+        const finalRemovedColor = applyContrastProtection(this.backgroundColor, '#ef4444');
+        bgGradStart = bgL >= 0.5 ? '#fee2e2' : '#1a0505';
+        bgGradEnd = bgL >= 0.5 ? '#fca5a5' : '#2e0a0a';
+        this.ctx.strokeStyle = finalRemovedColor;
+        this.ctx.shadowColor = finalRemovedColor;
+      } else {
+        if (node.id === this.selectedNodeId) {
+          const activeColor = borderCol === '#ffffff' ? '#e0f2fe' : borderCol;
+          bgGradStart = bgL >= 0.5 ? '#e0f2fe' : '#1e3a8a';
+          bgGradEnd = bgL >= 0.5 ? '#bae6fd' : '#1e40af';
+          this.ctx.strokeStyle = activeColor;
+          this.ctx.shadowColor = activeColor;
+        } else if (node.isNew) {
+          const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
+          bgGradStart = bgL >= 0.5 ? '#dcfce7' : '#052e16';
+          bgGradEnd = bgL >= 0.5 ? '#bbf7d0' : '#14532d';
+          this.ctx.strokeStyle = finalNewColor;
+          this.ctx.shadowColor = finalNewColor;
+        } else {
+          bgGradStart = bgL >= 0.5 ? '#f1f5f9' : '#0f172a';
+          bgGradEnd = bgL >= 0.5 ? '#cbd5e1' : '#1e293b';
+          this.ctx.strokeStyle = borderCol;
+          this.ctx.shadowColor = borderCol;
+        }
       }
 
       // Calculate dynamic rounded-square bounds based on the text width
@@ -863,7 +914,6 @@ export class CanvasRenderer {
       const h = 36; // perfect height for title + subtitle
 
       // Node shadow/glow
-      this.ctx.shadowColor = borderCol;
       this.ctx.shadowBlur = this.draggedNodeId === node.id ? 22 : 10;
 
       // Draw background rounded square
@@ -877,7 +927,6 @@ export class CanvasRenderer {
       this.ctx.fill();
 
       // Border outline
-      this.ctx.strokeStyle = borderCol;
       this.ctx.lineWidth = node.id === this.selectedNodeId ? 3.0 : 2.0;
       this.ctx.stroke();
 
@@ -885,14 +934,14 @@ export class CanvasRenderer {
       this.ctx.shadowBlur = 0;
 
       // Label text centered
-      this.ctx.fillStyle = node.isRemoved ? '#fca5a5' : '#f8fafc';
+      this.ctx.fillStyle = node.isRemoved ? (bgL >= 0.5 ? '#991b1b' : '#fca5a5') : (bgL >= 0.5 ? '#0f172a' : '#f8fafc');
       this.ctx.font = 'bold 10px monospace';
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillText(node.label, node.x, node.y - 4);
 
       // Subtitle or type index centered
-      this.ctx.fillStyle = node.isRemoved ? '#ef4444' : '#64748b';
+      this.ctx.fillStyle = node.isRemoved ? '#ef4444' : (bgL >= 0.5 ? '#475569' : '#64748b');
       this.ctx.font = '7px monospace';
       this.ctx.fillText(node.type === 'residue' ? 'residue' : 'atom', node.x, node.y + 6);
 
@@ -949,7 +998,7 @@ export class CanvasRenderer {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // Find if clicked on any node
+    // 1. Find if clicked on any node
     let foundNode: VisualNode | null = null;
     for (const node of this.nodes.values()) {
       if (node.isRemoved) continue;
@@ -966,13 +1015,44 @@ export class CanvasRenderer {
     if (foundNode) {
       this.draggedNodeId = foundNode.id;
       this.selectedNodeId = foundNode.id;
+      this.selectedEdgeId = null;
       foundNode.vx = 0;
       foundNode.vy = 0;
-      this.onSelectNode(foundNode);
-    } else {
-      this.selectedNodeId = null;
-      this.onSelectNode(null);
+      this.onSelectNode({ ...foundNode, elementType: 'node' } as any);
+      return;
     }
+
+    // 2. Find if clicked on any edge capsule
+    let foundEdge: VisualEdge | null = null;
+    for (const edge of this.edges) {
+      const sCoord = this.resolveCoordinate(edge.source);
+      const tCoord = this.resolveCoordinate(edge.target);
+      if (sCoord && tCoord) {
+        const midX = (sCoord.x + tCoord.x) / 2;
+        const midY = (sCoord.y + tCoord.y) / 2;
+        const dx = midX - mx;
+        const dy = midY - my;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        // If click is within 15px of edge capsule center
+        if (dist < 15) {
+          foundEdge = edge;
+          break;
+        }
+      }
+    }
+
+    if (foundEdge) {
+      this.selectedNodeId = null;
+      this.selectedEdgeId = foundEdge.id;
+      this.onSelectNode({ ...foundEdge, elementType: 'edge' } as any);
+      return;
+    }
+
+    // 3. Clear selection
+    this.selectedNodeId = null;
+    this.selectedEdgeId = null;
+    this.onSelectNode(null);
   };
 
   private onMouseMove = (e: MouseEvent) => {
