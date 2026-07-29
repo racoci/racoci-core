@@ -10,11 +10,11 @@
 MATCH {
   (kernel {role: "kernel", zone: "stage-0"}) -[:DEPENDS_ON]-> (parser),
   (parser {role: "parser"}) -[:DEPENDS_ON]-> (sync),
-  (sync) -[:SYNCS_WITH]-> (memory)
+  (sync) -[:SYNCS_WITH]-> (memory #ec4899)
 }
 
 // Group core components inside a safety membrane with new syntax
-[KERNEL_SAFETY_ZONE](kernel, parser, sync)
+[KERNEL_SAFETY_ZONE #a855f7](kernel, parser, sync)
 
 // Active system processes (Multi-Dimensional directed edges!)
 (task_queue) -[:ROUTES_TO]-> (kernel)
@@ -151,6 +151,38 @@ MATCH {
     }
   });
 
+  // 4.5 Resizable Split-Pane Layout state and mouse drag handlers
+  let splitPercent = $state(45); // start at 45% width of screen
+  let isDragging = $state(false);
+
+  function handleMouseDown(e: MouseEvent) {
+    e.preventDefault();
+    isDragging = true;
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!isDragging) return;
+    const percentage = (e.clientX / window.innerWidth) * 100;
+    // Clamp between 20% and 80% to keep both panes visible
+    splitPercent = Math.max(20, Math.min(80, percentage));
+
+    // Force canvas resize instantly
+    if (renderer && containerElement) {
+      renderer.resize(
+        containerElement.clientWidth,
+        containerElement.clientHeight
+      );
+    }
+  }
+
+  function handleMouseUp() {
+    isDragging = false;
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+  }
+
   function handleUpdateColor(color: string) {
     if (selectedNode) {
       selectedNode.color = color;
@@ -252,7 +284,7 @@ MATCH {
   <main class="pane-container">
     
     <!-- PANE 1: Textual Projection Editor (Left) -->
-    <section class="pane left-pane">
+    <section class="pane left-pane" style="width: {splitPercent}%;">
       <div class="pane-header">
         <span class="badge">Projection A</span>
         <h2>H-Cypher Algebraic Spec</h2>
@@ -271,8 +303,19 @@ MATCH {
       </div>
     </section>
 
+    <!-- Draggable Pane Splitter Divider -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div 
+      class="pane-splitter" 
+      class:active={isDragging}
+      onmousedown={handleMouseDown}
+      title="Drag to resize Projections"
+    >
+      <div class="splitter-line"></div>
+    </div>
+
     <!-- PANE 2: Spatial WebGL Hypergraph Projection (Right) -->
-    <section class="pane right-pane">
+    <section class="pane right-pane" style="width: {100 - splitPercent}%;">
       <div class="pane-header">
         <span class="badge secondary">Projection B</span>
         <h2>Spatial Hypergraph View</h2>
@@ -486,11 +529,12 @@ MATCH {
 
   /* Pane split layout */
   .pane-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-direction: row;
     flex: 1;
     height: calc(100vh - 58px);
     overflow: hidden;
+    position: relative;
   }
 
   .pane {
@@ -501,8 +545,32 @@ MATCH {
   }
 
   .left-pane {
-    border-right: 1px solid #1f2833;
     background-color: #12131c;
+  }
+
+  .pane-splitter {
+    width: 6px;
+    background-color: #0c0d14;
+    cursor: col-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    user-select: none;
+    transition: background-color 0.15s, box-shadow 0.15s;
+    border-left: 1px solid rgba(255, 255, 255, 0.04);
+    border-right: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  .pane-splitter:hover, .pane-splitter.active {
+    background-color: #00d2ff;
+    box-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
+  }
+
+  .splitter-line {
+    width: 1px;
+    height: 24px;
+    background-color: rgba(255, 255, 255, 0.15);
   }
 
   .right-pane {

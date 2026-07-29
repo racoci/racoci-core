@@ -249,10 +249,14 @@
 
   /* Real interactive textarea */
   textarea {
-    background: transparent;
-    color: transparent; /* Makes text transparent so the underlying highlight is visible */
-    caret-color: #00d2ff; /* Keeps our glowing cyan caret visible! */
-    resize: none;
+    background: transparent !important;
+    background-color: transparent !important;
+    color: transparent !important;
+    -webkit-text-fill-color: transparent !important; /* Webkit/GTK transparent override */
+    caret-color: #00d2ff !important;
+    border: none !important;
+    outline: none !important;
+    resize: none !important;
     z-index: 2;
   }
 
