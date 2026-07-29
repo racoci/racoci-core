@@ -12,12 +12,18 @@ MATCH {
   (sync) -[:SYNCS_WITH]-> (memory)
 }
 
-// Group core components inside a safety membrane
-[ KERNEL_SAFETY_ZONE ~ kernel, parser, sync ]
+// Group core components inside a safety membrane with new syntax
+[KERNEL_SAFETY_ZONE](kernel, parser, sync)
 
-// Active system processes
+// Active system processes (Multi-Dimensional directed edges!)
 (task_queue) -[:ROUTES_TO]-> (kernel)
 (task_queue) -[:BUFFERED_BY]-> (memory)
+
+// Directed edge from an external atom to a membrane!
+(monitor) -[:MONITORS]-> (KERNEL_SAFETY_ZONE)
+
+// Directed edge pointing directly to a relationship (edge-to-edge)!
+(audit_log) -[:LOGS]-> (ROUTES_TO)
 `);
 
   // 2. DOM references

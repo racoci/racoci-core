@@ -928,6 +928,45 @@ mod tests {
         } else {
             panic!("Expected direct Adjacency topology for parens");
         }
+
+        // 5. Parentheses with commas (unnamed Membrane, spin: 1)
+        let root_parens_commas = parser::parse_h_cypher("(a, b, c)", &engine).unwrap();
+        let node_parens_commas = engine.arena.get_node(root_parens_commas).unwrap();
+
+        if let Topology::Membrane { children, spin } = node_parens_commas {
+            assert_eq!(spin, 1);
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected Membrane topology for parenthetical commas");
+        }
+
+        // 6. Prefixed bracket name with parentheses list (named Membrane, spin: 1)
+        let root_prefixed = parser::parse_h_cypher("[my_membrane](a, b, c)", &engine).unwrap();
+        let node_prefixed = engine.arena.get_node(root_prefixed).unwrap();
+
+        if let Topology::Membrane { children, spin } = node_prefixed {
+            assert_eq!(spin, 1);
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected Membrane topology for prefixed name");
+        }
+
+        // 7. Suffixed bracket name with parentheses list (named Membrane, spin: 1)
+        let root_suffixed = parser::parse_h_cypher("(a, b, c)[my_membrane]", &engine).unwrap();
+        let node_suffixed = engine.arena.get_node(root_suffixed).unwrap();
+
+        if let Topology::Membrane { children, spin } = node_suffixed {
+            assert_eq!(spin, 1);
+            assert_eq!(children.len(), 3);
+            let a = engine.arena.get_node(children[0]).unwrap();
+            assert_eq!(a, Topology::Atom(b"a".to_vec()));
+        } else {
+            panic!("Expected Membrane topology for suffixed name");
+        }
     }
 
     #[test]

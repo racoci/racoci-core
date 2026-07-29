@@ -47,10 +47,10 @@ test('H-Cypher Parser - Unit Tests', async (t) => {
     assert.strictEqual(result.edges[0].label, 'DEPENDS_ON');
   });
 
-  await t.test('should parse membranes with nested scope', () => {
+  await t.test('should parse membranes with prefixed parenthetical scope', () => {
     const input = `
       (kernel) -> (parser)
-      [ KERNEL_SAFETY_ZONE ~ kernel, parser ]
+      [KERNEL_SAFETY_ZONE](kernel, parser)
     `;
     const result = parseHCypher(input);
 
@@ -58,6 +58,33 @@ test('H-Cypher Parser - Unit Tests', async (t) => {
     const memb = result.membranes[0];
     assert.strictEqual(memb.id, 'KERNEL_SAFETY_ZONE');
     assert.strictEqual(memb.label, 'KERNEL_SAFETY_ZONE');
+    assert.deepStrictEqual(memb.nodeIds, ['kernel', 'parser']);
+  });
+
+  await t.test('should parse membranes with suffixed parenthetical scope', () => {
+    const input = `
+      (kernel) -> (parser)
+      (kernel, parser)[KERNEL_SAFETY_ZONE]
+    `;
+    const result = parseHCypher(input);
+
+    assert.strictEqual(result.membranes.length, 1);
+    const memb = result.membranes[0];
+    assert.strictEqual(memb.id, 'KERNEL_SAFETY_ZONE');
+    assert.strictEqual(memb.label, 'KERNEL_SAFETY_ZONE');
+    assert.deepStrictEqual(memb.nodeIds, ['kernel', 'parser']);
+  });
+
+  await t.test('should parse membranes with unnamed parenthetical scope', () => {
+    const input = `
+      (kernel) -> (parser)
+      (kernel, parser)
+    `;
+    const result = parseHCypher(input);
+
+    assert.strictEqual(result.membranes.length, 1);
+    const memb = result.membranes[0];
+    assert.ok(memb.id.startsWith('membrane_'));
     assert.deepStrictEqual(memb.nodeIds, ['kernel', 'parser']);
   });
 });

@@ -24,7 +24,7 @@ pub fn tokenize(input: &str) -> Vec<String> {
                 tokens.push(current);
                 current = String::new();
             }
-        } else if c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '~' {
+        } else if c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '~' || c == ',' {
             if !current.is_empty() {
                 tokens.push(current);
                 current = String::new();
@@ -114,16 +114,87 @@ impl<'a> Parser<'a> {
 
         if token == "(" {
             let mut children = Vec::new();
+            let mut has_commas = false;
             while let Some(t) = self.peek() {
                 if t == ")" {
                     self.next(); // consume ")"
                     break;
                 }
+                if t == "," {
+                    self.next(); // consume ","
+                    has_commas = true;
+                    continue;
+                }
                 // Elements inside parenthesis represent direct list / hyperedge adjacency
                 children.push(self.parse_primary()?);
             }
-            Ok(self.engine.intern(Topology::Adjacency(children)))
+
+            // Check if there is a suffixed named bracket following ")"
+            let mut is_named_suffix = false;
+            if let Some(t) = self.peek() {
+                if t == "[" {
+                    self.next(); // consume "["
+                    // Read everything inside "[...]"
+                    while let Some(t) = self.next() {
+                        if t == "]" {
+                            break;
+                        }
+                    }
+                    is_named_suffix = true;
+                }
+            }
+
+            if has_commas || is_named_suffix {
+                Ok(self.engine.intern(Topology::Membrane { children, spin: 1 }))
+            } else {
+                Ok(self.engine.intern(Topology::Adjacency(children)))
+            }
         } else if token == "[" {
+            // It could be a prefixed membrane name!
+            // Let's find the closing "]" index
+            let mut depth = 1;
+            let mut end_idx = self.index;
+            while end_idx < self.tokens.len() {
+                if self.tokens[end_idx] == "[" {
+                    depth += 1;
+                } else if self.tokens[end_idx] == "]" {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                end_idx += 1;
+            }
+            if end_idx < self.tokens.len() && self.tokens[end_idx] == "]" {
+                // We found the closing "]"!
+                // Is the token immediately after "]" a "("?
+                if end_idx + 1 < self.tokens.len() && self.tokens[end_idx + 1] == "(" {
+                    // YES! This is a prefixed named membrane!
+                    // Let's consume the name of the membrane (all tokens between self.index and end_idx)
+                    for _ in self.index..end_idx {
+                        self.next(); // consume name tokens
+                    }
+                    self.next(); // consume "]"
+                    self.next(); // consume "("
+
+                    // Now parse the inner elements of the parenthetical list
+                    let mut children = Vec::new();
+                    while let Some(t) = self.peek() {
+                        if t == ")" {
+                            self.next(); // consume ")"
+                            break;
+                        }
+                        if t == "," {
+                            self.next(); // consume ","
+                            continue;
+                        }
+                        children.push(self.parse_primary()?);
+                    }
+                    return Ok(self.engine.intern(Topology::Membrane { children, spin: 1 }));
+                }
+            }
+
+            // Otherwise, it's a standard square-bracket membrane with spin -1 (the original behavior)
             let mut children = Vec::new();
             while let Some(t) = self.peek() {
                 if t == "]" {
@@ -132,7 +203,6 @@ impl<'a> Parser<'a> {
                 }
                 children.push(self.parse_primary()?);
             }
-            // Square brackets represent Membranes with spin -1 (non-orientable topology)
             Ok(self
                 .engine
                 .intern(Topology::Membrane { children, spin: -1 }))

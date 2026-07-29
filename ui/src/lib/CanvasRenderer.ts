@@ -38,6 +38,7 @@ interface VisualMembrane {
   alpha: number;
   isNew: boolean;
   isRemoved: boolean;
+  spin?: number;
 }
 
 export class CanvasRenderer {
@@ -653,20 +654,20 @@ export class CanvasRenderer {
   }
 
   /**
-   * Draw hyperedges and standard relationships
+   * Draw hyperedges and standard relationships with multi-dimensional routing support.
    */
   private drawEdges() {
     this.edges.forEach(edge => {
-      const s = this.nodes.get(edge.source);
-      const t = this.nodes.get(edge.target);
+      const sCoord = this.resolveCoordinate(edge.source);
+      const tCoord = this.resolveCoordinate(edge.target);
 
-      if (!s || !t) return;
+      if (!sCoord || !tCoord) return;
 
       // Animate edge alpha
-      const alpha = Math.min(s.alpha, t.alpha);
+      const alpha = Math.min(this.getEntityAlpha(edge.source), this.getEntityAlpha(edge.target));
       if (alpha <= 0.05) return;
 
-      const isRemovedEdge = edge.isRemoved || s.isRemoved || t.isRemoved;
+      const isRemovedEdge = edge.isRemoved || this.isEntityRemoved(edge.source) || this.isEntityRemoved(edge.target);
 
       // Styles
       this.ctx.lineWidth = 2.0;
@@ -680,15 +681,15 @@ export class CanvasRenderer {
 
       // Draw standard curved ribbon / edge line
       this.ctx.beginPath();
-      this.ctx.moveTo(s.x, s.y);
-      this.ctx.lineTo(t.x, t.y);
+      this.ctx.moveTo(sCoord.x, sCoord.y);
+      this.ctx.lineTo(tCoord.x, tCoord.y);
       this.ctx.stroke();
 
       // Draw dynamic glowing flow particles moving along edges to represent state changes
       if (!isRemovedEdge) {
         edge.pulseOffset = (edge.pulseOffset + 0.006) % 1.0;
-        const px = s.x + (t.x - s.x) * edge.pulseOffset;
-        const py = s.y + (t.y - s.y) * edge.pulseOffset;
+        const px = sCoord.x + (tCoord.x - sCoord.x) * edge.pulseOffset;
+        const py = sCoord.y + (tCoord.y - sCoord.y) * edge.pulseOffset;
 
         this.ctx.fillStyle = '#00f6ff'; // Neon blue pulse
         this.ctx.save();
@@ -706,16 +707,80 @@ export class CanvasRenderer {
       const capsuleW = labelWidth + 16;
       const capsuleH = 18;
 
-      const angle = Math.atan2(t.y - s.y, t.x - s.x);
+      const angle = Math.atan2(tCoord.y - sCoord.y, tCoord.x - sCoord.x);
 
-      // Determine target node's dynamic rounded-square width to stop arrowhead at border
-      this.ctx.font = 'bold 10px monospace';
-      const tLabelWidth = this.ctx.measureText(t.label).width;
-      const w_t = Math.max(55, tLabelWidth + 24);
-      const arrowDist = (w_t / 2) + 6; // stop at dynamic rectangular boundary
+      // Determine arrowhead stopping distance based on target entity type
+      let arrowDist = 0;
+      const targetId = edge.target;
+      const targetNode = this.nodes.get(targetId);
 
-      const ax = t.x - Math.cos(angle) * arrowDist;
-      const ay = t.y - Math.sin(angle) * arrowDist;
+      if (targetNode) {
+        // If target is a node: stop at w_t / 2 + 6
+        this.ctx.font = 'bold 10px monospace';
+        const tLabelWidth = this.ctx.measureText(targetNode.label).width;
+        const w_t = Math.max(55, tLabelWidth + 24);
+        arrowDist = (w_t / 2) + 6;
+      } else {
+        const targetEdge = this.edges.find(e => e.id === targetId || e.label === targetId);
+        if (targetEdge) {
+          // If target is an edge/capsule: stop at capsuleH / 2 + 4 (e.g. 14px)
+          arrowDist = 14;
+        } else {
+          const targetMemb = this.membranes.find(m => m.id === targetId || m.label === targetId);
+          if (targetMemb) {
+            // If target is a membrane: stop at the edge of its convex hull
+            const activeNodes = targetMemb.nodeIds
+              .map(id => this.nodes.get(id))
+              .filter((n): n is VisualNode => !!n && !n.isRemoved);
+
+            if (activeNodes.length > 0) {
+              const boundaryPoints: { x: number; y: number }[] = [];
+              const padding = 35; // perimeter distance from nodes
+              activeNodes.forEach(n => {
+                const r = n.radius + padding;
+                for (let angleVal = 0; angleVal < Math.PI * 2; angleVal += Math.PI / 4) {
+                  boundaryPoints.push({
+                    x: n.x + Math.cos(angleVal) * r,
+                    y: n.y + Math.sin(angleVal) * r,
+                  });
+                }
+              });
+              const hull = this.getConvexHull(boundaryPoints);
+              if (hull.length >= 3) {
+                let closestIntersect: { x: number; y: number } | null = null;
+                let minDist = Infinity;
+                for (let i = 0; i < hull.length; i++) {
+                  const p2 = hull[i];
+                  const p3 = hull[(i + 1) % hull.length];
+                  const ip = this.getLineIntersection(
+                    sCoord.x, sCoord.y, tCoord.x, tCoord.y,
+                    p2.x, p2.y, p3.x, p3.y
+                  );
+                  if (ip) {
+                    const dist = Math.sqrt((ip.x - sCoord.x) ** 2 + (ip.y - sCoord.y) ** 2);
+                    if (dist < minDist) {
+                      minDist = dist;
+                      closestIntersect = ip;
+                    }
+                  }
+                }
+                if (closestIntersect) {
+                  arrowDist = Math.sqrt((closestIntersect.x - tCoord.x) ** 2 + (closestIntersect.y - tCoord.y) ** 2);
+                } else {
+                  arrowDist = 45; // default fallback
+                }
+              } else {
+                arrowDist = 45;
+              }
+            } else {
+              arrowDist = 0;
+            }
+          }
+        }
+      }
+
+      const ax = tCoord.x - Math.cos(angle) * arrowDist;
+      const ay = tCoord.y - Math.sin(angle) * arrowDist;
 
       this.ctx.fillStyle = isRemovedEdge ? 'rgba(239, 68, 68, 0.7)' : '#3b82f6';
       this.ctx.beginPath();
@@ -726,8 +791,8 @@ export class CanvasRenderer {
       this.ctx.fill();
 
       // Draw the Thick Edge Capsule and embed the Text Name inside it
-      const midX = (s.x + t.x) / 2;
-      const midY = (s.y + t.y) / 2;
+      const midX = (sCoord.x + tCoord.x) / 2;
+      const midY = (sCoord.y + tCoord.y) / 2;
       
       // Prevent edge label text from being upside down when pointing leftwards
       let textAngle = angle;
@@ -976,6 +1041,86 @@ export class CanvasRenderer {
     }
 
     return hull;
+  }
+
+  private resolveCoordinate(id: string): { x: number; y: number } | null {
+    const node = this.nodes.get(id);
+    if (node) {
+      return { x: node.x, y: node.y };
+    }
+
+    const memb = this.membranes.find(m => m.id === id || m.label === id);
+    if (memb) {
+      const activeNodes = memb.nodeIds
+        .map(nodeId => this.nodes.get(nodeId))
+        .filter((n): n is VisualNode => !!n && !n.isRemoved);
+      if (activeNodes.length > 0) {
+        let sumX = 0, sumY = 0;
+        activeNodes.forEach(n => {
+          sumX += n.x;
+          sumY += n.y;
+        });
+        return { x: sumX / activeNodes.length, y: sumY / activeNodes.length };
+      }
+    }
+
+    const edge = this.edges.find(e => e.id === id || e.label === id);
+    if (edge) {
+      const srcCoord = this.resolveCoordinate(edge.source);
+      const tgtCoord = this.resolveCoordinate(edge.target);
+      if (srcCoord && tgtCoord) {
+        return {
+          x: (srcCoord.x + tgtCoord.x) / 2,
+          y: (srcCoord.y + tgtCoord.y) / 2,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private getEntityAlpha(id: string): number {
+    const node = this.nodes.get(id);
+    if (node) return node.alpha;
+    const memb = this.membranes.find(m => m.id === id || m.label === id);
+    if (memb) return memb.alpha;
+    const edge = this.edges.find(e => e.id === id || e.label === id);
+    if (edge) return edge.alpha;
+    return 1.0;
+  }
+
+  private isEntityRemoved(id: string): boolean {
+    const node = this.nodes.get(id);
+    if (node) return node.isRemoved;
+    const memb = this.membranes.find(m => m.id === id || m.label === id);
+    if (memb) return memb.isRemoved;
+    const edge = this.edges.find(e => e.id === id || e.label === id);
+    if (edge) return edge.isRemoved;
+    return false;
+  }
+
+  private getLineIntersection(
+    p0_x: number, p0_y: number, p1_x: number, p1_y: number,
+    p2_x: number, p2_y: number, p3_x: number, p3_y: number
+  ): { x: number; y: number } | null {
+    const s1_x = p1_x - p0_x;
+    const s1_y = p1_y - p0_y;
+    const s2_x = p3_x - p2_x;
+    const s2_y = p3_y - p2_y;
+
+    const denom = -s2_x * s1_y + s1_x * s2_y;
+    if (denom === 0) return null;
+
+    const s = (-s1_y * (p0_x - p2_x) + s1_x * (p0_y - p2_y)) / denom;
+    const t = ( s2_x * (p0_y - p2_y) - s2_y * (p0_x - p2_x)) / denom;
+
+    if (s >= 0 && s <= 1 && t >= 0 && t <= 1) {
+      return {
+        x: p0_x + (t * s1_x),
+        y: p0_y + (t * s1_y)
+      };
+    }
+    return null;
   }
 
   // Helper rounded rectangle drawer
