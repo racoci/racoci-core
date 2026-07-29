@@ -304,7 +304,7 @@ export class CanvasRenderer {
 
         // Desired spring length based on the edge's label length to prevent text overlaps
         const labelWidth = edge.label.length * 6.5;
-        const springLen = Math.max(160, labelWidth + 120);
+        const springLen = Math.max(210, labelWidth + 130);
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -849,14 +849,32 @@ export class CanvasRenderer {
       const nx = -Math.sin(angle);
       const ny = Math.cos(angle);
 
-      // Thin origin vertices wrapping source
-      const p1x = sx + nx * 2;
-      const p1y = sy + ny * 2;
-      const p2x = sx - nx * 2;
-      const p2y = sy - ny * 2;
+      // Implement Crescent Source-Hugging Socket:
+      // If source is a Node, pull left/right start vertices along the boundary's circumference
+      // so they form a beautiful "cup" socket that wraps/hugs the rounded-square perimeter.
+      let p1x = 0, p1y = 0;
+      let p2x = 0, p2y = 0;
+      let isHuggingSource = false;
+      let r_s = sourceDist;
 
-      // Shoulder point at 15px before the target tip
-      const shDist = Math.max(0, dist - 15);
+      if (sNode) {
+        isHuggingSource = true;
+        const wrapAngle = 0.35; // ~20 degrees of crescent wrap around the node perimeter
+        p1x = sCoord.x + Math.cos(angle - wrapAngle) * r_s;
+        p1y = sCoord.y + Math.sin(angle - wrapAngle) * r_s;
+        p2x = sCoord.x + Math.cos(angle + wrapAngle) * r_s;
+        p2y = sCoord.y + Math.sin(angle + wrapAngle) * r_s;
+      } else {
+        p1x = sx + nx * 2;
+        p1y = sy + ny * 2;
+        p2x = sx - nx * 2;
+        p2y = sy - ny * 2;
+      }
+
+      // Proportional scale checking to prevent overlapping on short edges
+      const bDist = Math.min(dist * 0.28, 12); // body base offset
+      const shDist = Math.max(bDist + 4, dist - 15); // shoulder base offset (always in front of body base)
+
       const shx = sx + Math.cos(angle) * shDist;
       const shy = sy + Math.sin(angle) * shDist;
 
@@ -866,8 +884,7 @@ export class CanvasRenderer {
       const p4x = shx - nx * 11;
       const p4y = shy - ny * 11;
 
-      // Thick body base coordinates (reaches full thickness quickly over 12px)
-      const bDist = Math.min(dist, 12);
+      // Thick body base coordinates
       const bx = sx + Math.cos(angle) * bDist;
       const by = sy + Math.sin(angle) * bDist;
 
@@ -903,28 +920,40 @@ export class CanvasRenderer {
       this.ctx.lineWidth = 1.5;
 
       this.ctx.beginPath();
-      this.ctx.moveTo(p1x, p1y);
-      // Asymptotically sweep from thin source to thick body
-      this.ctx.quadraticCurveTo(
-        sx + Math.cos(angle) * 6 + nx * 9,
-        sy + Math.sin(angle) * 6 + ny * 9,
-        p5x, p5y
-      );
-      // Line to left flared shoulder base
-      this.ctx.lineTo(p3x, p3y);
-      // Sharp turn to the exact target boundary tip!
-      this.ctx.lineTo(tx, ty);
-      // Sharp turn back to right flared shoulder base
-      this.ctx.lineTo(p4x, p4y);
-      // Line back to the thick body right
-      this.ctx.lineTo(p6x, p6y);
-      // Asymptotically curve back to the thin source right
-      this.ctx.quadraticCurveTo(
-        sx + Math.cos(angle) * 6 - nx * 9,
-        sy + Math.sin(angle) * 6 - ny * 9,
-        p2x, p2y
-      );
-      this.ctx.closePath();
+      
+      if (isHuggingSource) {
+        // Curve around the node boundary crescent cup to "envelop/wrap" the source
+        this.ctx.moveTo(p1x, p1y);
+        this.ctx.quadraticCurveTo(
+          sCoord.x + Math.cos(angle) * (r_s - 3),
+          sCoord.y + Math.sin(angle) * (r_s - 3),
+          p2x, p2y
+        );
+        this.ctx.lineTo(p6x, p6y);
+        this.ctx.lineTo(p4x, p4y);
+        this.ctx.lineTo(tx, ty);
+        this.ctx.lineTo(p3x, p3y);
+        this.ctx.lineTo(p5x, p5y);
+        this.ctx.closePath();
+      } else {
+        this.ctx.moveTo(p1x, p1y);
+        this.ctx.quadraticCurveTo(
+          sx + Math.cos(angle) * 6 + nx * 9,
+          sy + Math.sin(angle) * 6 + ny * 9,
+          p5x, p5y
+        );
+        this.ctx.lineTo(p3x, p3y);
+        this.ctx.lineTo(tx, ty);
+        this.ctx.lineTo(p4x, p4y);
+        this.ctx.lineTo(p6x, p6y);
+        this.ctx.quadraticCurveTo(
+          sx + Math.cos(angle) * 6 - nx * 9,
+          sy + Math.sin(angle) * 6 - ny * 9,
+          p2x, p2y
+        );
+        this.ctx.closePath();
+      }
+
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.restore();
