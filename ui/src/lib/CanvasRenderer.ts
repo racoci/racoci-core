@@ -302,15 +302,22 @@ export class CanvasRenderer {
         const dy = tNode.y - sNode.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        // Calculate the dynamic widths of the source and target nodes to prevent overlapping
-        const sWidth = Math.max(55, sNode.label.length * 6.5 + 24);
-        const tWidth = Math.max(55, tNode.label.length * 6.5 + 24);
+        // Measure the exact pixel widths of the edge label and node labels under their drawing fonts
+        this.ctx.font = 'bold 9px monospace';
+        const labelWidth = this.ctx.measureText(edge.label).width;
+
+        this.ctx.font = 'bold 10px monospace';
+        const sLabelWidth = this.ctx.measureText(sNode.label).width;
+        const tLabelWidth = this.ctx.measureText(tNode.label).width;
+
+        const sWidth = Math.max(55, sLabelWidth + 24);
+        const tWidth = Math.max(55, tLabelWidth + 24);
         const nodeRadiiSum = (sWidth / 2) + (tWidth / 2);
 
-        // Desired spring length with generous over-estimation:
-        // Combines the node sizes, the edge label width, and a highly spacious 160px buffer
-        const labelWidth = edge.label.length * 7;
-        const springLen = Math.max(260, labelWidth + 160 + nodeRadiiSum);
+        // Desired spring length calculated strictly and exactly based on the pixel sizes:
+        // We require the boundary-to-boundary distance to be at least labelWidth + 80px.
+        // We add the dynamic node radii sum to compute the exact center-to-center spring resting length.
+        const springLen = labelWidth + 80 + nodeRadiiSum;
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
