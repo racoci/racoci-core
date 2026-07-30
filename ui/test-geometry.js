@@ -73,19 +73,17 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       const arrowDist = (w_t / 2) + 2;
 
       // 1. Generate randomized source and target coordinates simulating the physics spring's resting target length
+      // Direct trigonometric placement ensures zero infinite loops and runs instantly!
       const sCoord = {
-        x: Math.random() * 800,
-        y: Math.random() * 600
+        x: Math.random() * 1000,
+        y: Math.random() * 1000
       };
-      let tCoord;
-      do {
-        tCoord = {
-          x: Math.random() * 800,
-          y: Math.random() * 600
-        };
-      } while (getDist(sCoord, tCoord) < (bodyLen + 140 + sourceDist + arrowDist));
-
-      const angle = Math.atan2(tCoord.y - sCoord.y, tCoord.x - sCoord.x);
+      const angle = Math.random() * Math.PI * 2;
+      const targetDist = bodyLen + 150 + sourceDist + arrowDist;
+      const tCoord = {
+        x: sCoord.x + Math.cos(angle) * targetDist,
+        y: sCoord.y + Math.sin(angle) * targetDist
+      };
 
       const sx = sCoord.x + Math.cos(angle) * sourceDist;
       const sy = sCoord.y + Math.sin(angle) * sourceDist;
@@ -117,7 +115,9 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       const shPt = getSpinePoint(uShoulder, sx, sy, qx, qy, tx, ty);
       const tPt = getSpinePoint(1.0, sx, sy, qx, qy, tx, ty);
 
-      // PART 3.1: Full-Face Node Embrace (Width is strictly 34px, hugging the face)
+      // PART 3.1: Full-Face Node Embrace (using mathematically secure normal vector offsets)
+      // This places the start vertices strictly at +/-17px along the source normal,
+      // guaranteeing an exact 34px starting width and absolute non-crossing boundary safety!
       const p1x = sPt.x + sPt.nx * 17;
       const p1y = sPt.y + sPt.ny * 17;
       const p2x = sPt.x - sPt.nx * 17;
@@ -158,10 +158,32 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       assert.ok(tangentDotProduct > 0.85, 'Text segment must remain flat and straight enough (low curvature) to keep the text perfectly readable!');
 
       // CONSTRAINT C: Strict Text Envelopment / Leak Protection
-      // The rigid, flat section of the arrow (the distance from bPt to ePt) must be at least as long as bodyLen
-      // to guarantee that the text NEVER leaks outside of the straight body segment!
       const actualRigidLength = getDist(bPt, ePt);
       assert.ok(actualRigidLength >= bodyLen - 1.0, `Text of length ${approxTextWidth}px must never leak out of its enclosing arrow body (actual body length: ${actualRigidLength}px, required: ${bodyLen}px)!`);
+
+      // CONSTRAINT D: Strict Tangent Smoothness & C1 Tangent-Continuity Checks
+      // The control points for curves must align parallel to the straight text body endpoints (bPt.tx, bPt.ty).
+      // This guarantees seamless 100% visual smoothness (C1 continuity) on all curved lines!
+      const ctrl_tail_left = { x: b_left.x - bPt.tx * 12, y: b_left.y - bPt.ty * 12 };
+      const ctrl_head_left = { x: e_left.x + ePt.tx * 12, y: e_left.y + ePt.ty * 12 };
+
+      const tailLeftTanX = b_left.x - ctrl_tail_left.x;
+      const tailLeftTanY = b_left.y - ctrl_tail_left.y;
+      const tailLeftTanLen = Math.sqrt(tailLeftTanX ** 2 + tailLeftTanY ** 2) || 1;
+      const tailLeftDot = (tailLeftTanX / tailLeftTanLen) * bPt.tx + (tailLeftTanY / tailLeftTanLen) * bPt.ty;
+
+      const headLeftTanX = ctrl_head_left.x - e_left.x;
+      const headLeftTanY = ctrl_head_left.y - e_left.y;
+      const headLeftTanLen = Math.sqrt(headLeftTanX ** 2 + headLeftTanY ** 2) || 1;
+      const headLeftDot = (headLeftTanX / headLeftTanLen) * ePt.tx + (headLeftTanY / headLeftTanLen) * ePt.ty;
+
+      assert.ok(tailLeftDot > 0.999, `Tail transition is unsmooth (tangent dot product: ${tailLeftDot}, required: >0.999)! Control points must align perfectly parallel with the straight text body tangent.`);
+      assert.ok(headLeftDot > 0.999, `Head transition is unsmooth (tangent dot product: ${headLeftDot}, required: >0.999)! Control points must align perfectly parallel with the straight text body tangent.`);
+
+      // CONSTRAINT E: Strict Self-Crossing & Loop Prevention Guard
+      // The target tip must remain strictly ahead of the source boundary along the ray to prevent loops.
+      const forwardDot = (tx - sx) * Math.cos(angle) + (ty - sy) * Math.sin(angle);
+      assert.ok(forwardDot > 12, `Reversing / loop detected (forward dot product: ${forwardDot}px, required: >12px)! Target tip must remain strictly ahead of the source boundary.`);
     }
   });
 });

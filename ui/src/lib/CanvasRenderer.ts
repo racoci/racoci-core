@@ -892,10 +892,11 @@ export class CanvasRenderer {
 
       const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2) || 1;
 
-      // CRITICAL DEFENSIVE GUARD: If the nodes are extremely close (like on initial load)
-      // or overlapping, bypass drawing this edge on this frame to prevent NaN/Infinity coordinates
-      // that silent-crash the entire Canvas 2D rendering state.
-      if (isNaN(dist) || dist <= 12) return;
+      // CRITICAL DEFENSIVE GUARD: If the target tip ends up behind or too close to the source boundary
+      // (e.g. on compressed lines or inside membranes), bypass drawing this edge on this frame
+      // to prevent self-crossing loops, reversing, or NaN coordinates that crash the canvas.
+      const dot = (tx - sx) * Math.cos(angle) + (ty - sy) * Math.sin(angle);
+      if (isNaN(dot) || dot <= 12) return;
 
       // PART 1: The Backbone Curve (Bezier Spine)
       // Controls the bend amount when forced close to prevent overlaps or tip reversing.
@@ -996,16 +997,18 @@ export class CanvasRenderer {
       const tip_y = tPt.y;
 
       // Define C1 Tangent-Continuous Control Points:
-      // Controls transition seamlessly from the head/tail curves into the straight central body
-      const ctrl_tail_left_x = b_left_x - sPt.tx * 8;
-      const ctrl_tail_left_y = b_left_y - sPt.ty * 8;
-      const ctrl_tail_right_x = b_right_x - sPt.tx * 8;
-      const ctrl_tail_right_y = b_right_y - sPt.ty * 8;
+      // Controls transition seamlessly and smoothly from the head/tail curves into the straight central body.
+      // We strictly use the local body start tangent (bPt.tx/ty) and body end tangent (ePt.tx/ty)
+      // rather than boundary tangents, completely eliminating all visual kinks (C1 continuity)!
+      const ctrl_tail_left_x = b_left_x - bPt.tx * 12;
+      const ctrl_tail_left_y = b_left_y - bPt.ty * 12;
+      const ctrl_tail_right_x = b_right_x - bPt.tx * 12;
+      const ctrl_tail_right_y = b_right_y - bPt.ty * 12;
 
-      const ctrl_head_left_x = e_left_x + tPt.tx * 8;
-      const ctrl_head_left_y = e_left_y + tPt.ty * 8;
-      const ctrl_head_right_x = e_right_x + tPt.tx * 8;
-      const ctrl_head_right_y = e_right_y + tPt.ty * 8;
+      const ctrl_head_left_x = e_left_x + ePt.tx * 12;
+      const ctrl_head_left_y = e_left_y + ePt.ty * 12;
+      const ctrl_head_right_x = e_right_x + ePt.tx * 12;
+      const ctrl_head_right_y = e_right_y + ePt.ty * 12;
 
       this.ctx.save();
       this.ctx.globalAlpha = alpha;
