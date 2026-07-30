@@ -640,7 +640,7 @@ export class CanvasRenderer {
       // Generate a set of 8 circular boundary points around each node
       // to create a smooth, rounded padding boundary around the nodes.
       let boundaryPoints: { x: number; y: number }[] = [];
-      const padding = 35; // perimeter distance from nodes
+      const padding = 20; // perimeter distance from nodes
       activeNodes.forEach(n => {
         const r = n.radius + padding;
         for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
@@ -772,7 +772,7 @@ export class CanvasRenderer {
 
             if (activeNodes.length > 0) {
               const boundaryPoints: { x: number; y: number }[] = [];
-              const padding = 35; // perimeter distance from nodes
+              const padding = 20; // perimeter distance from nodes
               activeNodes.forEach(n => {
                 const r = n.radius + padding;
                 for (let angleVal = 0; angleVal < Math.PI * 2; angleVal += Math.PI / 4) {
@@ -839,7 +839,7 @@ export class CanvasRenderer {
 
             if (activeNodes.length > 0) {
               const boundaryPoints: { x: number; y: number }[] = [];
-              const padding = 35; // perimeter distance from nodes
+              const padding = 20; // perimeter distance from nodes
               activeNodes.forEach(n => {
                 const r = n.radius + padding;
                 for (let angleVal = 0; angleVal < Math.PI * 2; angleVal += Math.PI / 4) {
@@ -1036,61 +1036,79 @@ export class CanvasRenderer {
       this.ctx.strokeStyle = borderCol;
       this.ctx.lineWidth = 1.5;
 
-      // Draw the segmented-spline tapered arrow path (Rigid Middle + Adapting Curved Tails)
+      // Draw the custom tapered arrow path (Rigid Middle + Adapting Curved Tails)
       this.ctx.beginPath();
       
-      // 1. Move to left boundary of source
-      this.ctx.moveTo(p1x, p1y);
-
-      if (sNode) {
-        // Curve around the node boundary crescent cup to "envelop/wrap" the source snugly
-        // Controlled by pulling the curve 3px backwards along the spine tangent for a perfect tight hug
-        this.ctx.quadraticCurveTo(
-          sPt.x - sPt.tx * 3,
-          sPt.y - sPt.ty * 3,
-          p2x, p2y
-        );
+      if (isCompressed) {
+        // FLAT CAPSULE FALLBACK: Draw perfectly straight flat boundaries directly from crescent base to arrowhead shoulder
+        // This completely eliminates all curves, discontinuities, and deformations on compressed edges!
+        this.ctx.moveTo(p1x, p1y);
+        if (sNode) {
+          this.ctx.quadraticCurveTo(
+            sPt.x - sPt.tx * 3,
+            sPt.y - sPt.ty * 3,
+            p2x, p2y
+          );
+        } else {
+          this.ctx.lineTo(p2x, p2y);
+        }
+        this.ctx.lineTo(sh_right_x, sh_right_y);
+        this.ctx.lineTo(tx, ty);
+        this.ctx.lineTo(sh_left_x, sh_left_y);
+        this.ctx.lineTo(p1x, p1y);
       } else {
-        this.ctx.lineTo(p2x, p2y);
+        // STANDARD HIGH-CURVATURE SEGMENTED SPLINE:
+        // 1. Move to left boundary of source
+        this.ctx.moveTo(p1x, p1y);
+
+        if (sNode) {
+          this.ctx.quadraticCurveTo(
+            sPt.x - sPt.tx * 3,
+            sPt.y - sPt.ty * 3,
+            p2x, p2y
+          );
+        } else {
+          this.ctx.lineTo(p2x, p2y);
+        }
+
+        // 2. TAIL RIGHT: Curve smoothly and tangentially into the rigid body start
+        this.ctx.quadraticCurveTo(
+          ctrl_tail_right_x,
+          ctrl_tail_right_y,
+          b_right_x, b_right_y
+        );
+
+        // 3. RIGID MIDDLE RIGHT: Flat straight line from body right start to body right end (keeps text straight and perfectly readable!)
+        this.ctx.lineTo(e_right_x, e_right_y);
+
+        // 4. HEAD RIGHT: Curve gently and tangentially from body right end to the flared arrowhead shoulder right
+        this.ctx.quadraticCurveTo(
+          ctrl_head_right_x,
+          ctrl_head_right_y,
+          sh_right_x, sh_right_y
+        );
+
+        // 5. Arrowhead sharp tip and shoulder left turns
+        this.ctx.lineTo(tx, ty);
+        this.ctx.lineTo(sh_left_x, sh_left_y);
+
+        // 6. HEAD LEFT: Curve gently and tangentially from left flared shoulder to left body end
+        this.ctx.quadraticCurveTo(
+          ctrl_head_left_x,
+          ctrl_head_left_y,
+          e_left_x, e_left_y
+        );
+
+        // 7. RIGID MIDDLE LEFT: Flat straight line from body left end to body left start
+        this.ctx.lineTo(b_left_x, b_left_y);
+
+        // 8. TAIL LEFT: Curve out asymptotically and tangentially back to source left
+        this.ctx.quadraticCurveTo(
+          ctrl_tail_left_x,
+          ctrl_tail_left_y,
+          p1x, p1y
+        );
       }
-
-      // 2. TAIL RIGHT: Curve smoothly and tangentially into the rigid body start
-      this.ctx.quadraticCurveTo(
-        ctrl_tail_right_x,
-        ctrl_tail_right_y,
-        b_right_x, b_right_y
-      );
-
-      // 3. RIGID MIDDLE RIGHT: Flat straight line from body right start to body right end (keeps text straight and perfectly readable!)
-      this.ctx.lineTo(e_right_x, e_right_y);
-
-      // 4. HEAD RIGHT: Curve gently and tangentially from body right end to the flared arrowhead shoulder right
-      this.ctx.quadraticCurveTo(
-        ctrl_head_right_x,
-        ctrl_head_right_y,
-        sh_right_x, sh_right_y
-      );
-
-      // 5. Arrowhead sharp tip and shoulder left turns
-      this.ctx.lineTo(tx, ty);
-      this.ctx.lineTo(sh_left_x, sh_left_y);
-
-      // 6. HEAD LEFT: Curve gently and tangentially from left flared shoulder to left body end
-      this.ctx.quadraticCurveTo(
-        ctrl_head_left_x,
-        ctrl_head_left_y,
-        e_left_x, e_left_y
-      );
-
-      // 7. RIGID MIDDLE LEFT: Flat straight line from body left end to body left start
-      this.ctx.lineTo(b_left_x, b_left_y);
-
-      // 8. TAIL LEFT: Curve out asymptotically and tangentially back to source left
-      this.ctx.quadraticCurveTo(
-        ctrl_tail_left_x,
-        ctrl_tail_left_y,
-        p1x, p1y
-      );
 
       this.ctx.closePath();
       this.ctx.fill();

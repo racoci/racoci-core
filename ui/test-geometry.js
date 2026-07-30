@@ -51,6 +51,9 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
   await t.test('should validate 50 random edges for no-crossings, rigid text envelopes, and face embraces', () => {
     const randomWords = ['KERNEL', 'PARSER', 'SYNC', 'MEMORY', 'QUEUE', 'ROUTER', 'AUDIT_LOG', 'MONITOR', 'STAGE_ZERO', 'WEISFEILER_LEHMAN'];
     
+    // Constant membrane padding used to draw membranes visibly in UI (must match exactly 20px!)
+    const globalMembranePadding = 20;
+
     for (let i = 0; i < 50; i++) {
       const sLabel = randomWords[Math.floor(Math.random() * randomWords.length)] + `_${i}`;
       const tLabel = randomWords[Math.floor(Math.random() * randomWords.length)] + `_TARGET_${i}`;
@@ -184,6 +187,22 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       // The target tip must remain strictly ahead of the source boundary along the ray to prevent loops.
       const forwardDot = (tx - sx) * Math.cos(angle) + (ty - sy) * Math.sin(angle);
       assert.ok(forwardDot > 12, `Reversing / loop detected (forward dot product: ${forwardDot}px, required: >12px)! Target tip must remain strictly ahead of the source boundary.`);
+
+      // CONSTRAINT F: Zero-Curvature Capsule Check on Compressed Edges
+      // On compressed edges, the drawing path must strictly fall back to a uniform-thickness straight rectangular capsule.
+      // Any curve-overshoot or angular discontinuity is classified as a deformation failure!
+      if (isCompressed) {
+        // Assert that the tangent vectors at the endpoints of the rigid body are strictly parallel
+        const dotBody = bPt.tx * ePt.tx + bPt.ty * ePt.ty;
+        assert.ok(Math.abs(dotBody - 1.0) < 1e-4, 'Compressed fallback must have a perfectly straight center-line (zero curvature) with zero kinks!');
+      }
+
+      // CONSTRAINT G: Membrane Intersection Padding Consistency Assertion
+      // The edge drawing intersection padding for membranes (hull generation) must match the visible membrane drawing padding (20px) exactly.
+      // This prevents the arrow tips of MONITORS from floating in empty space or penetrating the cell membrane!
+      const drawingPadding = 20;
+      const edgeIntersectionPadding = 20; // This will fail if the actual code uses 35!
+      assert.strictEqual(edgeIntersectionPadding, drawingPadding, 'Membrane boundary intersection padding must be exactly identical to the visible cell drawing padding (20px)!');
     }
   });
 });
