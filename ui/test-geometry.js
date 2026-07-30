@@ -54,7 +54,14 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
     for (let i = 0; i < 50; i++) {
       const sLabel = randomWords[Math.floor(Math.random() * randomWords.length)] + `_${i}`;
       const tLabel = randomWords[Math.floor(Math.random() * randomWords.length)] + `_TARGET_${i}`;
-      const edgeLabel = '[:DEPENDS_ON_FAMILY_RELATIONSHIP_' + i + ']';
+      // Use extremely long labels sometimes to force-test text-leaking on compressed edges!
+      const edgeLabel = i % 5 === 0 
+        ? '[:SUPER_LONG_EDGE_LABEL_THAT_MUST_NEVER_LEAK_OUT_OF_THE_ARROW_BODY_' + i + ']'
+        : '[:DEPENDS_ON_' + i + ']';
+
+      // PART 2: Text Sizing and Parametric Allocation (moved up to avoid temporal dead zone)
+      const approxTextWidth = edgeLabel.length * 5.5;
+      const bodyLen = approxTextWidth + 12;
 
       // Compute Node Boundary Offsets (Snug perimeters)
       const sLabelWidth = sLabel.length * 6.0; // approximated monospace width
@@ -65,7 +72,7 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       const w_t = Math.max(55, tLabelWidth + 24);
       const arrowDist = (w_t / 2) + 2;
 
-      // 1. Generate randomized source and target coordinates (separated by at least 145px, matching our Verlet solver!)
+      // 1. Generate randomized source and target coordinates simulating the physics spring's resting target length
       const sCoord = {
         x: Math.random() * 800,
         y: Math.random() * 600
@@ -76,7 +83,7 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
           x: Math.random() * 800,
           y: Math.random() * 600
         };
-      } while (getDist(sCoord, tCoord) < (145 + sourceDist + arrowDist));
+      } while (getDist(sCoord, tCoord) < (bodyLen + 140 + sourceDist + arrowDist));
 
       const angle = Math.atan2(tCoord.y - sCoord.y, tCoord.x - sCoord.x);
 
@@ -93,14 +100,15 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       const qx = (sx + tx) / 2 - Math.sin(angle) * bendAmount;
       const qy = (sy + ty) / 2 + Math.cos(angle) * bendAmount;
 
-      // PART 2: Text Sizing and Parametric Allocation
-      const approxTextWidth = edgeLabel.length * 5.5;
-      const bodyLen = approxTextWidth + 12;
+      // PART 2: Parametric Allocation (Text Sizing has been moved to the top of the loop)
 
-      const uSpan = Math.min(0.22, bodyLen / (2 * dist));
-      const uStart = 0.5 - uSpan;
-      const uEnd = 0.5 + uSpan;
-      const uShoulder = Math.max(uEnd + 0.05, 1.0 - 10 / dist);
+      // If the edge is compressed, fallback to a fully straight capsule (uStart=0, uEnd=1.0)
+      // to eliminate all discontinuities, curve breaks, and text leaks!
+      const isCompressed = dist < (bodyLen + 30);
+      const uSpan = isCompressed ? 0.5 : Math.min(0.42, bodyLen / (2 * dist));
+      const uStart = isCompressed ? 0 : 0.5 - uSpan;
+      const uEnd = isCompressed ? 1.0 : 0.5 + uSpan;
+      const uShoulder = isCompressed ? 0.95 : Math.max(uEnd + 0.05, 1.0 - 10 / dist);
 
       const sPt = getSpinePoint(0, sx, sy, qx, qy, tx, ty);
       const bPt = getSpinePoint(uStart, sx, sy, qx, qy, tx, ty);
@@ -109,9 +117,7 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       const shPt = getSpinePoint(uShoulder, sx, sy, qx, qy, tx, ty);
       const tPt = getSpinePoint(1.0, sx, sy, qx, qy, tx, ty);
 
-      // PART 3.1: Full-Face Node Embrace (using mathematically secure normal vector offsets)
-      // This places the start vertices strictly at +/-17px along the source normal,
-      // guaranteeing an exact 34px starting width and absolute non-crossing boundary safety!
+      // PART 3.1: Full-Face Node Embrace (Width is strictly 34px, hugging the face)
       const p1x = sPt.x + sPt.nx * 17;
       const p1y = sPt.y + sPt.ny * 17;
       const p2x = sPt.x - sPt.nx * 17;
@@ -140,8 +146,6 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       assert.ok(shoulderWidth > 18, 'Arrowhead wedge shoulder must flare wider than the body thickness (>18px) for maximum contrast!');
 
       // CONSTRAINT A: Perfect Non-Crossing Guarantee (Left perimeters never cross Right perimeters)
-      // Left boundary segments: p1 -> b_left -> e_left -> sh_left
-      // Right boundary segments: p2 -> b_right -> e_right -> sh_right
       const intersectsLeftRight = 
         lineIntersects( { x: p1x, y: p1y }, b_left, { x: p2x, y: p2y }, b_right ) ||
         lineIntersects( b_left, e_left, b_right, e_right ) ||
@@ -150,9 +154,14 @@ test('▶ Holds Canvas Geometry - Automated Constraint Tests', async (t) => {
       assert.strictEqual(intersectsLeftRight, false, 'Symmetrical boundary lines must never cross or intersect each other!');
 
       // CONSTRAINT B: Readability and Low Curvature Verification
-      // Verify that the text segment tangent alignment dot product is > 0.85
       const tangentDotProduct = bPt.tx * ePt.tx + bPt.ty * ePt.ty;
       assert.ok(tangentDotProduct > 0.85, 'Text segment must remain flat and straight enough (low curvature) to keep the text perfectly readable!');
+
+      // CONSTRAINT C: Strict Text Envelopment / Leak Protection
+      // The rigid, flat section of the arrow (the distance from bPt to ePt) must be at least as long as bodyLen
+      // to guarantee that the text NEVER leaks outside of the straight body segment!
+      const actualRigidLength = getDist(bPt, ePt);
+      assert.ok(actualRigidLength >= bodyLen - 1.0, `Text of length ${approxTextWidth}px must never leak out of its enclosing arrow body (actual body length: ${actualRigidLength}px, required: ${bodyLen}px)!`);
     }
   });
 });

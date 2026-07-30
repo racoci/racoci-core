@@ -292,44 +292,78 @@ export class CanvasRenderer {
       }
     }
 
-    // 2. Edge Attractions (Springs)
+    // 2. Multi-Dimensional Edge Attractions (Springs for Nodes, Membranes, and Edges!)
     this.edges.forEach(edge => {
-      const sNode = this.nodes.get(edge.source);
-      const tNode = this.nodes.get(edge.target);
+      const sCoord = this.resolveCoordinate(edge.source);
+      const tCoord = this.resolveCoordinate(edge.target);
 
-      if (sNode && tNode && !sNode.isRemoved && !tNode.isRemoved) {
-        const dx = tNode.x - sNode.x;
-        const dy = tNode.y - sNode.y;
+      if (sCoord && tCoord) {
+        const dx = tCoord.x - sCoord.x;
+        const dy = tCoord.y - sCoord.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        // Measure the exact pixel widths of the edge label and node labels under their drawing fonts
+        // Calculate exact node widths and label width for the spring resting length
         this.ctx.font = 'bold 9px monospace';
         const labelWidth = this.ctx.measureText(edge.label).width;
 
-        this.ctx.font = 'bold 10px monospace';
-        const sLabelWidth = this.ctx.measureText(sNode.label).width;
-        const tLabelWidth = this.ctx.measureText(tNode.label).width;
+        let sourceRadius = 12;
+        const sNode = this.nodes.get(edge.source);
+        if (sNode) {
+          this.ctx.font = 'bold 10px monospace';
+          sourceRadius = Math.max(55, this.ctx.measureText(sNode.label).width + 24) / 2;
+        }
 
-        const sWidth = Math.max(55, sLabelWidth + 24);
-        const tWidth = Math.max(55, tLabelWidth + 24);
-        const nodeRadiiSum = (sWidth / 2) + (tWidth / 2);
+        let targetRadius = 12;
+        const tNode = this.nodes.get(edge.target);
+        if (tNode) {
+          this.ctx.font = 'bold 10px monospace';
+          targetRadius = Math.max(55, this.ctx.measureText(tNode.label).width + 24) / 2;
+        }
 
-        // Desired spring length calculated strictly and exactly based on the pixel sizes:
-        // We require the boundary-to-boundary distance to be at least labelWidth + 130px.
-        // We add the dynamic node radii sum to compute the exact center-to-center spring resting length.
-        const springLen = labelWidth + 130 + nodeRadiiSum;
+        // Enforce exact resting length: text width + 140px buffer + radii
+        const springLen = labelWidth + 140 + sourceRadius + targetRadius;
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
 
-        if (sNode.id !== this.draggedNodeId) {
-          sNode.vx += fx;
-          sNode.vy += fy;
-        }
-        if (tNode.id !== this.draggedNodeId) {
-          tNode.vx -= fx;
-          tNode.vy -= fy;
-        }
+        // Propagate spring forces recursively to active nodes
+        const applyForceToEntity = (id: string, forceX: number, forceY: number) => {
+          const node = this.nodes.get(id);
+          if (node) {
+            if (id !== this.draggedNodeId) {
+              node.vx += forceX;
+              node.vy += forceY;
+            }
+            return;
+          }
+
+          const memb = this.membranes.find(m => m.id === id || m.label === id);
+          if (memb) {
+            const activeNodes = memb.nodeIds
+              .map(nodeId => this.nodes.get(nodeId))
+              .filter((n): n is VisualNode => !!n && !n.isRemoved);
+            if (activeNodes.length > 0) {
+              // Distribute force evenly among membrane's nodes
+              activeNodes.forEach(n => {
+                if (n.id !== this.draggedNodeId) {
+                  n.vx += forceX / activeNodes.length;
+                  n.vy += forceY / activeNodes.length;
+                }
+              });
+            }
+            return;
+          }
+
+          const edgeVal = this.edges.find(e => e.id === id || e.label === id);
+          if (edgeVal) {
+            // Distribute force evenly between edge's endpoints
+            applyForceToEntity(edgeVal.source, forceX * 0.5, forceY * 0.5);
+            applyForceToEntity(edgeVal.target, forceX * 0.5, forceY * 0.5);
+          }
+        };
+
+        applyForceToEntity(edge.source, fx, fy);
+        applyForceToEntity(edge.target, -fx, -fy);
       }
     });
 
@@ -900,10 +934,13 @@ export class CanvasRenderer {
 
       // PART 2: Text Positioning in the region of lowest curvature (centered around u = 0.5)
       // Map body segment to parametric bounds [u_start, u_end]
-      const uSpan = Math.min(0.22, bodyLen / (2 * clampedDist));
-      const uStart = 0.5 - uSpan;
-      const uEnd = 0.5 + uSpan;
-      const uShoulder = Math.max(uEnd + 0.05, 1.0 - 10 / clampedDist); // compact 10px arrowhead
+      // If the edge is compressed, fallback to a fully straight capsule (uStart=0, uEnd=1.0)
+      // to eliminate all discontinuities, curve breaks, and text leaks!
+      const isCompressed = clampedDist < (bodyLen + 30);
+      const uSpan = isCompressed ? 0.5 : Math.min(0.42, bodyLen / (2 * clampedDist));
+      const uStart = isCompressed ? 0 : 0.5 - uSpan;
+      const uEnd = isCompressed ? 1.0 : 0.5 + uSpan;
+      const uShoulder = isCompressed ? 0.95 : Math.max(uEnd + 0.05, 1.0 - 10 / clampedDist); // compact 10px arrowhead
 
       // Evaluate the spine points at various segment boundaries
       const sPt = getSpinePoint(0);         // Source Boundary
