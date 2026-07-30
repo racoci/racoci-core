@@ -1,5 +1,5 @@
-import type { NodeData, EdgeData, MembraneData } from './HCypherParser';
-import { applyContrastProtection, getClosestAllowedColor, getRelativeLuminance, hexToRgb } from './ColorMath';
+import type { NodeData, EdgeData, MembraneData } from './HCypherParser.js';
+import { applyContrastProtection, getClosestAllowedColor, getRelativeLuminance, hexToRgb } from './ColorMath.js';
 
 interface VisualNode {
   id: string;
@@ -315,9 +315,9 @@ export class CanvasRenderer {
         const nodeRadiiSum = (sWidth / 2) + (tWidth / 2);
 
         // Desired spring length calculated strictly and exactly based on the pixel sizes:
-        // We require the boundary-to-boundary distance to be at least labelWidth + 80px.
+        // We require the boundary-to-boundary distance to be at least labelWidth + 130px.
         // We add the dynamic node radii sum to compute the exact center-to-center spring resting length.
-        const springLen = labelWidth + 80 + nodeRadiiSum;
+        const springLen = labelWidth + 130 + nodeRadiiSum;
         const force = (dist - springLen) * kSpring;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
@@ -692,9 +692,6 @@ export class CanvasRenderer {
   /**
    * Draw hyperedges and standard relationships with multi-dimensional routing support.
    */
-  /**
-   * Draw hyperedges and standard relationships with multi-dimensional routing support.
-   */
   private drawEdges() {
     this.edges.forEach(edge => {
       const sCoord = this.resolveCoordinate(edge.source);
@@ -702,8 +699,11 @@ export class CanvasRenderer {
 
       if (!sCoord || !tCoord) return;
 
-      // Animate edge alpha
-      const alpha = Math.min(this.getEntityAlpha(edge.source), this.getEntityAlpha(edge.target));
+      // Animate edge alpha (defended against NaN/undefined leaks)
+      const srcAlpha = this.getEntityAlpha(edge.source);
+      const tgtAlpha = this.getEntityAlpha(edge.target);
+      const alphaVal = Math.min(srcAlpha, tgtAlpha);
+      const alpha = isNaN(alphaVal) ? 1.0 : alphaVal;
       if (alpha <= 0.05) return;
 
       const isRemovedEdge = edge.isRemoved || this.isEntityRemoved(edge.source) || this.isEntityRemoved(edge.target);
@@ -760,9 +760,9 @@ export class CanvasRenderer {
                     p2.x, p2.y, p3.x, p3.y
                   );
                   if (ip) {
-                    const dist = Math.sqrt((ip.x - tCoord.x) ** 2 + (ip.y - tCoord.y) ** 2);
-                    if (dist < minDist) {
-                      minDist = dist;
+                    const distVal = Math.sqrt((ip.x - tCoord.x) ** 2 + (ip.y - tCoord.y) ** 2);
+                    if (distVal < minDist) {
+                      minDist = distVal;
                       closestIntersect = ip;
                     }
                   }
@@ -827,9 +827,9 @@ export class CanvasRenderer {
                     p2.x, p2.y, p3.x, p3.y
                   );
                   if (ip) {
-                    const dist = Math.sqrt((ip.x - sCoord.x) ** 2 + (ip.y - sCoord.y) ** 2);
-                    if (dist < minDist) {
-                      minDist = dist;
+                    const distVal = Math.sqrt((ip.x - sCoord.x) ** 2 + (ip.y - sCoord.y) ** 2);
+                    if (distVal < minDist) {
+                      minDist = distVal;
                       closestIntersect = ip;
                     }
                   }
@@ -858,39 +858,117 @@ export class CanvasRenderer {
 
       const dist = Math.sqrt((tx - sx) ** 2 + (ty - sy) ** 2) || 1;
 
-      // 3. Draw the solid, custom tapered arrow polygon with asymptotic thickening
-      const nx = -Math.sin(angle);
-      const ny = Math.cos(angle);
+      // CRITICAL DEFENSIVE GUARD: If the nodes are extremely close (like on initial load)
+      // or overlapping, bypass drawing this edge on this frame to prevent NaN/Infinity coordinates
+      // that silent-crash the entire Canvas 2D rendering state.
+      if (isNaN(dist) || dist <= 12) return;
 
-      // Symmetrical start vertices at the source boundary (thin 6px total width)
-      const p1x = sx + nx * 3;
-      const p1y = sy + ny * 3;
-      const p2x = sx - nx * 3;
-      const p2y = sy - ny * 3;
+      // PART 1: The Backbone Curve (Bezier Spine)
+      // Controls the bend amount when forced close to prevent overlaps or tip reversing.
+      const bendAmount = Math.max(0, 150 - dist) * 0.7;
+      const qx = (sx + tx) / 2 - Math.sin(angle) * bendAmount;
+      const qy = (sy + ty) / 2 + Math.cos(angle) * bendAmount;
 
-      // Proportional scale checking to prevent overlapping on short edges
-      // Reaches full body thickness tightly over 8px, and makes the arrowhead extremely compact (10px length)
-      // to maximize the straight flat body space for the text label.
-      const bDist = Math.min(dist * 0.15, 8); // body base offset
-      const shDist = Math.max(bDist + 2, dist - 10); // shoulder base offset
+      // Helper to retrieve coordinate, tangent, and normal vectors along the Bezier spine
+      const getSpinePoint = (u: number) => {
+        // Clamp parametric value strictly to [0, 1]
+        const clampedU = Math.max(0, Math.min(1, u));
+        const x = (1 - clampedU) ** 2 * sx + 2 * clampedU * (1 - clampedU) * qx + clampedU ** 2 * tx;
+        const y = (1 - clampedU) ** 2 * sy + 2 * clampedU * (1 - clampedU) * qy + clampedU ** 2 * ty;
+        
+        const dx = 2 * (1 - clampedU) * (qx - sx) + 2 * clampedU * (tx - qx);
+        const dy = 2 * (1 - clampedU) * (qy - sy) + 2 * clampedU * (ty - qy);
+        const dDist = Math.sqrt(dx * dx + dy * dy) || 1;
+        
+        return {
+          x,
+          y,
+          tx: dx / dDist,
+          ty: dy / dDist,
+          nx: -dy / dDist,
+          ny: dx / dDist
+        };
+      };
 
-      const shx = sx + Math.cos(angle) * shDist;
-      const shy = sy + Math.sin(angle) * shDist;
+      // Measure exact text width under its drawing font to partition the spine
+      this.ctx.font = 'bold 9px monospace';
+      const textWidth = this.ctx.measureText(edge.label).width;
+      const bodyLen = textWidth + 12;
 
-      // Flared arrowhead shoulder coordinates
-      const p3x = shx + nx * 11;
-      const p3y = shy + ny * 11;
-      const p4x = shx - nx * 11;
-      const p4y = shy - ny * 11;
+      // Clamp distance for safe divisions
+      const clampedDist = Math.max(20, dist);
 
-      // Thick body base coordinates (18px total body width)
-      const bx = sx + Math.cos(angle) * bDist;
-      const by = sy + Math.sin(angle) * bDist;
+      // PART 2: Text Positioning in the region of lowest curvature (centered around u = 0.5)
+      // Map body segment to parametric bounds [u_start, u_end]
+      const uSpan = Math.min(0.22, bodyLen / (2 * clampedDist));
+      const uStart = 0.5 - uSpan;
+      const uEnd = 0.5 + uSpan;
+      const uShoulder = Math.max(uEnd + 0.05, 1.0 - 10 / clampedDist); // compact 10px arrowhead
 
-      const p5x = bx + nx * 9;
-      const p5y = by + ny * 9;
-      const p6x = bx - nx * 9;
-      const p6y = by - ny * 9;
+      // Evaluate the spine points at various segment boundaries
+      const sPt = getSpinePoint(0);         // Source Boundary
+      const cPt = getSpinePoint(0.08);      // Asymptotic control point (funnels down rapidly)
+      const bPt = getSpinePoint(uStart);    // Rigid Body Start
+      const mPt = getSpinePoint(0.5);       // Midpoint peak
+      const ePt = getSpinePoint(uEnd);      // Rigid Body End
+      const shPt = getSpinePoint(uShoulder);// Arrowhead shoulder
+      const tPt = getSpinePoint(1.0);       // Target Tip
+
+      // Symmetrical start vertices at the source boundary (strictly normal-based to prevent crossings)
+      // Full-Face Hugging: Starts wide (34px total, offset 17px along normal) to "embrace" the entire source face snugly
+      let p1x = 0, p1y = 0;
+      let p2x = 0, p2y = 0;
+
+      if (sNode) {
+        p1x = sPt.x + sPt.nx * 17;
+        p1y = sPt.y + sPt.ny * 17;
+        p2x = sPt.x - sPt.nx * 17;
+        p2y = sPt.y - sPt.ny * 17;
+      } else {
+        p1x = sPt.x + sPt.nx * 3;
+        p1y = sPt.y + sPt.ny * 3;
+        p2x = sPt.x - sPt.nx * 3;
+        p2y = sPt.y - sPt.ny * 3;
+      }
+
+      // PART 3.1: Tapered Tail (Funnels down asymptotically from 34px to 18px body thickness)
+      // Asymptotic hyperbolic control points
+      const ctrl_left_x = cPt.x + cPt.nx * 9;
+      const ctrl_left_y = cPt.y + cPt.ny * 9;
+      const ctrl_right_x = cPt.x - cPt.nx * 9;
+      const ctrl_right_y = cPt.y - cPt.ny * 9;
+
+      // PART 3.2: Constant-Thickness Text Wrapper (W_body = 18px -> 9px on each side)
+      const b_left_x = bPt.x + bPt.nx * 9;
+      const b_left_y = bPt.y + bPt.ny * 9;
+      const b_right_x = bPt.x - bPt.nx * 9;
+      const b_right_y = bPt.y - bPt.ny * 9;
+
+      const e_left_x = ePt.x + ePt.nx * 9;
+      const e_left_y = ePt.y + ePt.ny * 9;
+      const e_right_x = ePt.x - ePt.nx * 9;
+      const e_right_y = ePt.y - ePt.ny * 9;
+
+      // PART 3.3: Arrowhead & Classic Wedge Tip (Shoulder flares to 26px total width -> 13px on each side)
+      const sh_left_x = shPt.x + shPt.nx * 13;
+      const sh_left_y = shPt.y + shPt.ny * 13;
+      const sh_right_x = shPt.x - shPt.nx * 13;
+      const sh_right_y = shPt.y - shPt.ny * 13;
+
+      const tip_x = tPt.x;
+      const tip_y = tPt.y;
+
+      // Define C1 Tangent-Continuous Control Points:
+      // Controls transition seamlessly from the head/tail curves into the straight central body
+      const ctrl_tail_left_x = b_left_x - sPt.tx * 8;
+      const ctrl_tail_left_y = b_left_y - sPt.ty * 8;
+      const ctrl_tail_right_x = b_right_x - sPt.tx * 8;
+      const ctrl_tail_right_y = b_right_y - sPt.ty * 8;
+
+      const ctrl_head_left_x = e_left_x + tPt.tx * 8;
+      const ctrl_head_left_y = e_left_y + tPt.ty * 8;
+      const ctrl_head_right_x = e_right_x + tPt.tx * 8;
+      const ctrl_head_right_y = e_right_y + tPt.ty * 8;
 
       this.ctx.save();
       this.ctx.globalAlpha = alpha;
@@ -918,44 +996,59 @@ export class CanvasRenderer {
       this.ctx.strokeStyle = borderCol;
       this.ctx.lineWidth = 1.5;
 
-      // Draw the streamlined, non-crossing custom tapered arrow
+      // Draw the segmented-spline tapered arrow path (Rigid Middle + Adapting Curved Tails)
       this.ctx.beginPath();
       
-      // Start at left boundary of source
+      // 1. Move to left boundary of source
       this.ctx.moveTo(p1x, p1y);
 
       if (sNode) {
         // Curve around the node boundary crescent cup to "envelop/wrap" the source snugly
+        // Controlled by pulling the curve 3px backwards along the spine tangent for a perfect tight hug
         this.ctx.quadraticCurveTo(
-          sx - Math.cos(angle) * 3,
-          sy - Math.sin(angle) * 3,
+          sPt.x - sPt.tx * 3,
+          sPt.y - sPt.ty * 3,
           p2x, p2y
         );
       } else {
-        // Simple straight connection across the thin source
         this.ctx.lineTo(p2x, p2y);
       }
 
-      // Curve out asymptotically to the thick body right
+      // 2. TAIL RIGHT: Curve smoothly and tangentially into the rigid body start
       this.ctx.quadraticCurveTo(
-        sx + Math.cos(angle) * (bDist / 2) - nx * 9,
-        sy + Math.sin(angle) * (bDist / 2) - ny * 9,
-        p6x, p6y
+        ctrl_tail_right_x,
+        ctrl_tail_right_y,
+        b_right_x, b_right_y
       );
 
-      // Line to right flared shoulder
-      this.ctx.lineTo(p4x, p4y);
-      // Sharp turn to the exact target boundary tip!
-      this.ctx.lineTo(tx, ty);
-      // Sharp turn back to left flared shoulder
-      this.ctx.lineTo(p3x, p3y);
-      // Line back to thick body left
-      this.ctx.lineTo(p5x, p5y);
+      // 3. RIGID MIDDLE RIGHT: Flat straight line from body right start to body right end (keeps text straight and perfectly readable!)
+      this.ctx.lineTo(e_right_x, e_right_y);
 
-      // Curve back in asymptotically to thin source left
+      // 4. HEAD RIGHT: Curve gently and tangentially from body right end to the flared arrowhead shoulder right
       this.ctx.quadraticCurveTo(
-        sx + Math.cos(angle) * (bDist / 2) + nx * 9,
-        sy + Math.sin(angle) * (bDist / 2) + ny * 9,
+        ctrl_head_right_x,
+        ctrl_head_right_y,
+        sh_right_x, sh_right_y
+      );
+
+      // 5. Arrowhead sharp tip and shoulder left turns
+      this.ctx.lineTo(tx, ty);
+      this.ctx.lineTo(sh_left_x, sh_left_y);
+
+      // 6. HEAD LEFT: Curve gently and tangentially from left flared shoulder to left body end
+      this.ctx.quadraticCurveTo(
+        ctrl_head_left_x,
+        ctrl_head_left_y,
+        e_left_x, e_left_y
+      );
+
+      // 7. RIGID MIDDLE LEFT: Flat straight line from body left end to body left start
+      this.ctx.lineTo(b_left_x, b_left_y);
+
+      // 8. TAIL LEFT: Curve out asymptotically and tangentially back to source left
+      this.ctx.quadraticCurveTo(
+        ctrl_tail_left_x,
+        ctrl_tail_left_y,
         p1x, p1y
       );
 
@@ -967,8 +1060,31 @@ export class CanvasRenderer {
       // Draw dynamic glowing flow particles moving along the exact center line representing state changes
       if (!isRemovedEdge) {
         edge.pulseOffset = (edge.pulseOffset + 0.006) % 1.0;
-        const px = sx + (tx - sx) * edge.pulseOffset;
-        const py = sy + (ty - sy) * edge.pulseOffset;
+        const u = edge.pulseOffset;
+        
+        // Curve trajectory beautifully on the adaptive head/tail curves, but keep it straight/flat inside the rigid middle!
+        let px = 0, py = 0;
+        const spineRatio = u; // percentage along the path
+
+        // Segmented spine coordinate resolution
+        if (spineRatio < 0.25) {
+          // Tail curve section (quadratic bezier from sx,sy to bPt.x,bPt.y)
+          const localU = spineRatio / 0.25;
+          const tailBend = bendAmount * (4 * (spineRatio * 0.5) * (1 - spineRatio * 0.5));
+          px = sx + (bPt.x - sx) * localU;
+          py = sy + (bPt.y - sy) * localU + sPt.ny * tailBend;
+        } else if (spineRatio > 0.75) {
+          // Head curve section (quadratic bezier from ePt.x,ePt.y to tx,ty)
+          const localU = (spineRatio - 0.75) / 0.25;
+          const headBend = bendAmount * (4 * (spineRatio * 0.5 + 0.5) * (1 - (spineRatio * 0.5 + 0.5)));
+          px = ePt.x + (tx - ePt.x) * localU;
+          py = ePt.y + (ty - ePt.y) * localU + sPt.ny * headBend;
+        } else {
+          // RIGID MIDDLE: perfectly straight/flat line segment!
+          const localU = (spineRatio - 0.25) / 0.5;
+          px = bPt.x + (ePt.x - bPt.x) * localU;
+          py = bPt.y + (ePt.y - bPt.y) * localU;
+        }
 
         const pulseColor = finalEdgeColor === '#ffffff' ? '#00f6ff' : finalEdgeColor;
         this.ctx.fillStyle = pulseColor;
@@ -981,10 +1097,7 @@ export class CanvasRenderer {
         this.ctx.restore();
       }
 
-      // Draw the Text Name directly inside the thick body of the arrow
-      const midX = (sx + tx) / 2;
-      const midY = (sy + ty) / 2;
-      
+      // Draw the Text Name directly inside the rigid body of the arrow
       // Prevent edge label text from being upside down when pointing leftwards
       let textAngle = angle;
       if (textAngle < -Math.PI) textAngle += Math.PI * 2;
@@ -994,7 +1107,7 @@ export class CanvasRenderer {
       }
 
       this.ctx.save();
-      this.ctx.translate(midX, midY);
+      this.ctx.translate(mPt.x, mPt.y);
       this.ctx.rotate(textAngle);
 
       // Text Label centered inside the arrow conduit
@@ -1307,11 +1420,11 @@ export class CanvasRenderer {
 
   private getEntityAlpha(id: string): number {
     const node = this.nodes.get(id);
-    if (node) return node.alpha;
+    if (node && typeof node.alpha === 'number' && !isNaN(node.alpha)) return node.alpha;
     const memb = this.membranes.find(m => m.id === id || m.label === id);
-    if (memb) return memb.alpha;
+    if (memb && typeof memb.alpha === 'number' && !isNaN(memb.alpha)) return memb.alpha;
     const edge = this.edges.find(e => e.id === id || e.label === id);
-    if (edge) return edge.alpha;
+    if (edge && typeof edge.alpha === 'number' && !isNaN(edge.alpha)) return edge.alpha;
     return 1.0;
   }
 
