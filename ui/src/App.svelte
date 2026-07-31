@@ -31,6 +31,205 @@ MATCH {
   let canvasElement: HTMLCanvasElement | null = $state(null);
   let containerElement: HTMLElement | null = $state(null);
 
+  // 3. Smart SSR Simulator Templates & Actions
+  let selectedTemplate = $state("default");
+
+  const ssrTemplates = {
+    default: {
+      name: "Default (Holds Kernel Rules)",
+      code: `// Holds Kernel Topology Rules
+// MATCH the stage-0 kernel and its dependency structure
+MATCH {
+  (kernel {role: "kernel", zone: "stage-0"}) -[:DEPENDS_ON]-> (parser),
+  (parser {role: "parser"}) -[:DEPENDS_ON]-> (sync),
+  (sync) -[:SYNCS_WITH]-> (memory #ec4899)
+}
+
+// Group core components inside a safety membrane with new syntax
+[KERNEL_SAFETY_ZONE #a855f7](kernel, parser, sync)
+
+// Active system processes (Multi-Dimensional directed edges!)
+(task_queue) -[:ROUTES_TO]-> (kernel)
+(task_queue) -[:BUFFERED_BY]-> (memory)
+
+// Directed edge from an external atom to a membrane!
+(monitor) -[:MONITORS]-> (KERNEL_SAFETY_ZONE)
+
+// Directed edge pointing directly to a relationship (edge-to-edge)!
+(audit_log) -[:LOGS]-> (ROUTES_TO)
+`,
+      rule: ""
+    },
+    forth: {
+      name: "Forth (Constant Folding with Comments)",
+      code: `// FORTH SOURCE CODE (AST-agnostic stack)
+: energy_calc
+  2 ( massa ) 3 ( aceleração ) * 3 ( escala_c ) * ( fator_g ) 10 *
+;`,
+      rule: `MATCH {
+  :[a:literal] (:[comment_a]) * :[b:literal] (:[comment_b]) * :[c:literal] (:[comment_c]) * (:[comment_d]) :[scale:literal] *
+}
+TRANSITION => {
+  :[calc(a * b * c * scale)] (:[comment_a]) (:[comment_b]) (:[comment_c]) (:[comment_d]) *
+}`
+    },
+    clojure: {
+      name: "Clojure (Thread-First Macro Destructuring)",
+      code: `// CLOJURE SOURCE CODE (Homoiconic nested scope)
+(defn process-order [order]
+  (-> order
+      (assoc :timestamp (now))
+      (update-in [:user :id] (fn [id] (decrypt-id id)))
+      (calculate-tax 0.08)))`,
+      rule: `MATCH {
+  (-> :[x] 
+      (assoc :[k] :[v]) 
+      (update-in :[path] (fn [:[arg]] (:[func] :[arg]))) 
+      (:[last_func] :[last_arg]))
+}
+TRANSITION => {
+  (:[last_func] 
+    (update-in (assoc :[x] :[k] :[v]) :[path] #(:[func] %)) 
+    :[last_arg])
+}`
+    },
+    haskell: {
+      name: "Haskell (Monadic Bind to Do Notation)",
+      code: `// HASKELL SOURCE CODE (Monadic chain)
+validateToken token >>= \\tok -> if not (isValid tok) then throwError InvalidToken else fetchRoles tok >>= \\roles -> if null roles then throwError NoRoles else return (tok, roles)`,
+      rule: `MATCH {
+  :[action1] >>= \\:[tok] -> if not (isValid :[tok]) then throwError :[err1] else :[action2] :[tok] >>= \\:[roles] -> if null :[roles] then throwError :[err2] else return (:[tok], :[roles])
+}
+TRANSITION => {
+  do {
+    :[tok] <- :[action1];
+    guard (isValid :[tok]) <|> throwError :[err1];
+    :[roles] <- :[action2] :[tok];
+    guard (not (null :[roles])) <|> throwError :[err2];
+    return (:[tok], :[roles])
+  }
+}`
+    },
+    prolog: {
+      name: "Prolog (Tail Recursion & DCG)",
+      code: `// PROLOG SOURCE CODE (Logical rules)
+sum_list([], 0).
+sum_list([H|T], Sum) :- 
+    sum_list(T, Rest), 
+    !, 
+    Sum is H + Rest, 
+    asserta(cache_sum([H|T], Sum)).`,
+      rule: `MATCH {
+  :[pred]([], 0).
+  :[pred]([H|T], Sum) :- :[pred](T, Rest), !, Sum is H + Rest, :[side_effect].
+}
+TRANSITION => {
+  :[pred](L, Sum) :- :[pred]_acc(L, 0, Sum).
+  :[pred]_acc([], Acc, Acc).
+  :[pred]_acc([H|T], Acc, Sum) :- NewAcc is Acc + H, :[pred]_acc(T, NewAcc, Sum), !, :[side_effect].
+}`
+    }
+  };
+
+  function handleSelectTemplate(name: string) {
+    selectedTemplate = name;
+    const template = ssrTemplates[name as keyof typeof ssrTemplates];
+    if (template) {
+      hCypherCode = template.code;
+      systemStatus = `SMART SSR: TEMPLATE '${template.name}' LOADED.`;
+      
+      // Inject visual nodes for the custom languages!
+      if (name === "forth" && renderer) {
+        hCypherCode = `[FORTH_STACK #a855f7](mass, acceleration, c_factor, g_factor, scale_10)
+(mass) -[:MULT_BY]-> (acceleration)
+(c_factor) -[:SCALED_BY]-> (g_factor)
+(g_factor) -[:COLLAPSED_BY]-> (scale_10)
+`;
+      } else if (name === "clojure" && renderer) {
+        hCypherCode = `[CLOJURE_NAMESPACE #00ffcc](transform_user, get_user, assoc_active, update_prefs, decrypt_id)
+(transform_user) -[:READS_FROM]-> (get_user)
+(assoc_active) -[:UPDATES]-> (update_prefs)
+(update_prefs) -[:DECRYPTS_WITH]-> (decrypt_id)
+`;
+      } else if (name === "haskell" && renderer) {
+        hCypherCode = `[HASKELL_MONAD #ec4899](validate_token, fetch_roles, guard_token, guard_roles, return_tuple)
+(validate_token) -[:BINDS_TO]-> (guard_token)
+(fetch_roles) -[:BINDS_TO]-> (guard_roles)
+(guard_roles) -[:RETURNS]-> (return_tuple)
+`;
+      } else if (name === "prolog" && renderer) {
+        hCypherCode = `[PROLOG_DATABASE #eab308](sentence_rule, noun_phrase, verb_phrase, unification_expr)
+(sentence_rule) -[:PARSES]-> (noun_phrase)
+(noun_phrase) -[:CUTS_TO]-> (verb_phrase)
+(verb_phrase) -[:UNIFIES]-> (unification_expr)
+`;
+      }
+    }
+    setTimeout(() => {
+      systemStatus = "IDLE (LOCK_FREE_BUS_SYNC)";
+    }, 3000);
+  }
+
+  function handleRunSmartRefactor() {
+    if (selectedTemplate === "default") {
+      systemStatus = "SMART SSR: CHOOSE AN EXOTIC LANGUAGE TEMPLATE FIRST!";
+      return;
+    }
+
+    systemStatus = "SMART SSR: INITIATING ALGEBRAIC DPO PUSHOUT REWRITE (L => R)...";
+    
+    // Simulate updating the text and triggering the beautiful visual transition
+    setTimeout(() => {
+      const template = ssrTemplates[selectedTemplate as keyof typeof ssrTemplates];
+      if (template) {
+        // Trigger a gorgeous flashing visual on the active nodes!
+        if (renderer) {
+          renderer.illuminatePath(Array.from(renderer.nodes.keys()));
+          
+          // Make some nodes slide to the bottom right sys::residue!
+          const activeNodes = Array.from(renderer.nodes.values());
+          if (activeNodes.length >= 2) {
+            const residueNode = activeNodes[activeNodes.length - 1];
+            residueNode.isRemoved = true;
+            residueNode.slideProgress = 0;
+            residueNode.targetX = renderer.canvas.width / window.devicePixelRatio - 120;
+            residueNode.targetY = renderer.canvas.height / window.devicePixelRatio - 120;
+          }
+        }
+
+        // Replace the code with the beautiful, refactored final result!
+        if (selectedTemplate === "forth") {
+          hCypherCode = `// FORTH REFACTORED VIA SMART SSR (DPO REWRITE)
+: energy_calc
+  180 ( massa ) ( aceleração ) ( escala_c ) ( fator_g ) *
+;`;
+        } else if (selectedTemplate === "clojure") {
+          hCypherCode = `// CLOJURE REFACTORED VIA SMART SSR (DPO REWRITE)
+(defn transform-user [db user-id]
+  (let [prefs (get-user-prefs (get-user db user-id) :preferences)] (assoc (get-user db user-id) :active true :preferences (assoc prefs :theme (invert-theme theme)))))`;
+        } else if (selectedTemplate === "haskell") {
+          hCypherCode = `// HASKELL REFACTORED VIA SMART SSR (DPO REWRITE)
+do
+  tok <- validateToken token
+  guard (isValid tok) <|> throwError InvalidToken
+  roles <- fetchRoles tok
+  guard (not (null roles)) <|> throwError NoRoles
+  return (tok, roles)`;
+        } else if (selectedTemplate === "prolog") {
+          hCypherCode = `// PROLOG REFACTORED VIA SMART SSR (DPO REWRITE)
+sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sentence(N, V).`;
+        }
+
+        systemStatus = "SMART SSR: DPO REWRITE COMMITTED successfully! ENTROPY REDUCED.";
+      }
+    }, 1800);
+
+    setTimeout(() => {
+      systemStatus = "IDLE (LOCK_FREE_BUS_SYNC)";
+      if (renderer) renderer.illuminatePath([]);
+    }, 5000);
+  }
+
   // 3. Simulation & state
   let renderer = $state<CanvasRenderer | null>(null);
   let selectedNode = $state<any>(null);
@@ -522,15 +721,29 @@ MATCH {
 
       <!-- Smart SSR Refactoring Simulator Panel -->
       <div class="ssr-simulator-bar">
-        <span class="ssr-bar-title">Smart SSR Simulator:</span>
+        <span class="ssr-bar-title">Smart SSR:</span>
+        <select class="template-select" value={selectedTemplate} onchange={(e) => handleSelectTemplate(e.currentTarget.value)}>
+          <option value="default">Select Paradigm Template...</option>
+          <option value="forth">Forth (Concatenative)</option>
+          <option value="clojure">Clojure (Homoiconic)</option>
+          <option value="haskell">Haskell (Monadic/Transformer)</option>
+          <option value="prolog">Prolog (Logical DCG)</option>
+        </select>
+        
+        <button class="btn btn-refactor" onclick={handleRunSmartRefactor} title="Execute category-theoretic DPO rewrite">
+          ⚡ Run Refactor (H-Patch)
+        </button>
+
+        <span class="divider">|</span>
+
         <button class="btn btn-ssr" onclick={handleSSRReorder} title="Swap Term Order (A + B ⇒ B + A)">
-          Reorder Terms
+          A + B ⇄ B + A
         </button>
         <button class="btn btn-ssr" onclick={handleSSRFlatten} title="Flatten Nested Conditionals (If/Else)">
-          Flatten Conditionals
+          Flatten Ifs
         </button>
         <button class="btn btn-ssr" onclick={handleSSRSafeSwap} title="Invert Nested Scopes safely with Vacuum check (~)">
-          Safe Scope Inversion
+          Safe Swap (~)
         </button>
       </div>
 
@@ -913,7 +1126,43 @@ MATCH {
     font-weight: bold;
     text-shadow: 0 0 4px rgba(168, 85, 247, 0.4);
     letter-spacing: 0.5px;
-    margin-right: 8px;
+    margin-right: 4px;
+  }
+
+  .template-select {
+    background: #1f2833;
+    color: #ffffff;
+    border: 1px solid #45a29e;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 11px;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .template-select:focus {
+    box-shadow: 0 0 8px rgba(69, 162, 158, 0.4);
+  }
+
+  .btn-refactor {
+    background: #a855f7;
+    color: #ffffff;
+    border: none;
+    font-weight: bold;
+    text-shadow: 0 0 4px rgba(255,255,255,0.4);
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+  }
+
+  .btn-refactor:hover {
+    background: #c084fc;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+  }
+
+  .divider {
+    color: #1f2833;
+    font-weight: bold;
+    margin: 0 4px;
   }
 
   .btn-ssr {
