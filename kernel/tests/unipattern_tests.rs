@@ -132,3 +132,78 @@ sum_acc([H|T], Acc, Sum) :-
     let output = apply_unipattern(input, rule);
     assert_eq!(output, expected);
 }
+
+#[test]
+fn test_ultra_complex_forth_nested_folding() {
+    let input = r#": energy_calc
+  2 ( massa ) 3 ( aceleração ) * 3 ( escala_c ) * ( fator_g ) 10 *
+;"#;
+    let rule = r#"MATCH {
+  :[a:literal] (:[comment_a]) * :[b:literal] (:[comment_b]) * :[c:literal] (:[comment_c]) * (:[comment_d]) :[scale:literal] *
+}
+TRANSITION => {
+  :[calc(a * b * c * scale)] (:[comment_a]) (:[comment_b]) (:[comment_c]) (:[comment_d]) *
+}"#;
+    let expected = r#": energy_calc
+  180 ( massa ) ( aceleração ) ( escala_c ) ( fator_g ) *
+;"#;
+    let output = apply_unipattern(input, rule);
+    assert_eq!(output, expected);
+}
+
+#[test]
+fn test_ultra_complex_clojure_destructuring() {
+    let input = r#"(defn transform-user [db user-id]
+  (->> (get-user db user-id)
+       (assoc :active true)
+       (update :preferences (fn [{:keys [theme lang] :as prefs}] (assoc prefs :theme (invert-theme theme))))))"#;
+    let rule = r#"MATCH {
+  (->> :[input] (assoc :[k] :[v]) (update :[field] (fn [{:keys [:[theme_var] :[lang_var]] :as :[prefs_var]}] (assoc :[prefs_var] :[theme_var] (invert-theme :[theme_var])))))
+}
+TRANSITION => {
+  (let [:[prefs_var] (get-user-prefs :[input] :[field])] (assoc :[input] :[k] :[v] :[field] (assoc :[prefs_var] :[theme_var] (invert-theme :[theme_var]))))
+}"#;
+    let expected = r#"(defn transform-user [db user-id]
+  (let [prefs (get-user-prefs (get-user db user-id) :preferences)] (assoc (get-user db user-id) :active true :preferences (assoc prefs :theme (invert-theme theme)))))"#;
+    let output = apply_unipattern(input, rule);
+    assert_eq!(output, expected);
+}
+
+#[test]
+fn test_ultra_complex_haskell_transformer_unroll() {
+    let input = "validateToken token >>= \\tok -> if not (isValid tok) then throwError InvalidToken else fetchRoles tok >>= \\roles -> if null roles then throwError NoRoles else return (tok, roles)";
+    let rule = r#"MATCH {
+  :[action1] >>= \:[tok] -> if not (isValid :[tok]) then throwError :[err1] else :[action2] :[tok] >>= \:[roles] -> if null :[roles] then throwError :[err2] else return (:[tok], :[roles])
+}
+TRANSITION => {
+  do {
+    :[tok] <- :[action1];
+    guard (isValid :[tok]) <|> throwError :[err1];
+    :[roles] <- :[action2] :[tok];
+    guard (not (null :[roles])) <|> throwError :[err2];
+    return (:[tok], :[roles])
+  }
+}"#;
+    let expected = r#"do
+  tok <- validateToken token
+  guard (isValid tok) <|> throwError InvalidToken
+  roles <- fetchRoles tok
+  guard (not (null roles)) <|> throwError NoRoles
+  return (tok, roles)"#;
+    let output = apply_unipattern(input, rule);
+    assert_eq!(output, expected);
+}
+
+#[test]
+fn test_ultra_complex_prolog_dcg_expansion() {
+    let input = "sentence(S) --> noun_phrase(N), !, verb_phrase(V), { S = sentence(N, V) }.";
+    let rule = r#"MATCH {
+  :[rule_name](:[args]) --> :[part1](:[arg1]), !, :[part2](:[arg2]), { :[arg3] = :[result] }.
+}
+TRANSITION => {
+  :[rule_name](:[args], S0, S) :- :[part1](:[arg1], S0, S1), !, :[part2](:[arg2], S1, S), :[arg3] = :[result].
+}"#;
+    let expected = "sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sentence(N, V).";
+    let output = apply_unipattern(input, rule);
+    assert_eq!(output, expected);
+}
