@@ -141,6 +141,113 @@ MATCH {
     selectedNode = null;
   }
 
+  // Smart SSR Action 1: Commutative Term Reordering (A + B => B + A)
+  function handleSSRReorder() {
+    systemStatus = "SMART SSR: DETECTING COMMUTATIVE PATTERNS...";
+    
+    // Check current state in text
+    if (hCypherCode.includes("(task_queue) -[:ROUTES_TO]-> (kernel)")) {
+      systemStatus = "SMART SSR: COMMUTATIVE TERM SWAP APPLIED (ROUTES_TO)";
+      hCypherCode = hCypherCode.replace(
+        "(task_queue) -[:ROUTES_TO]-> (kernel)",
+        "(kernel) -[:ROUTES_TO]-> (task_queue)"
+      );
+      if (renderer) {
+        renderer.illuminatePath(["task_queue", "kernel"]);
+      }
+    } else if (hCypherCode.includes("(kernel) -[:ROUTES_TO]-> (task_queue)")) {
+      systemStatus = "SMART SSR: COMMUTATIVE TERM SWAP REVERSED (ROUTES_TO)";
+      hCypherCode = hCypherCode.replace(
+        "(kernel) -[:ROUTES_TO]-> (task_queue)",
+        "(task_queue) -[:ROUTES_TO]-> (kernel)"
+      );
+      if (renderer) {
+        renderer.illuminatePath(["kernel", "task_queue"]);
+      }
+    } else {
+      // Incase user modified the text, inject first
+      systemStatus = "SMART SSR: TERM INJECTED & REORDERED";
+      hCypherCode += `\n(kernel) -[:ROUTES_TO]-> (task_queue)\n`;
+    }
+
+    setTimeout(() => {
+      systemStatus = "IDLE (LOCK_FREE_BUS_SYNC)";
+      if (renderer) renderer.illuminatePath([]);
+    }, 4000);
+  }
+
+  // Smart SSR Action 2: Nested Conditional Flattening (A => B)
+  // Replaces deeply nested structures with a flat, merged conditional,
+  // making the excised sub-scaffolding slide organically into the residue ghost membrane!
+  function handleSSRFlatten() {
+    systemStatus = "SMART SSR: SCANNING NESTED CONDITIONAL MEMBRANES...";
+    
+    // Setup nested conditionals if they are not already there
+    if (!hCypherCode.includes("nested_if")) {
+      hCypherCode += `\n// Nested conditionals prior to Smart SSR\n(if_block) -[:COND]-> (A)\n(if_block) -[:BODY]-> (nested_if)\n(nested_if) -[:COND]-> (B)\n(nested_if) -[:BODY]-> (body_block)\n`;
+      systemStatus = "SMART SSR: NESTED CONDITIONALS INJECTED";
+    } else {
+      // Perform flattening!
+      systemStatus = "SMART SSR: FLATTENING CONDITIONALS... DPO SUBSTITUTION";
+      
+      hCypherCode = hCypherCode.replace(
+        `\n// Nested conditionals prior to Smart SSR\n(if_block) -[:COND]-> (A)\n(if_block) -[:BODY]-> (nested_if)\n(nested_if) -[:COND]-> (B)\n(nested_if) -[:BODY]-> (body_block)\n`,
+        `\n// Flattened conditional applied via Smart SSR\n(if_block) -[:COND]-> (A_AND_B)\n(if_block) -[:BODY]-> (body_block)\n`
+      );
+
+      // Trigger a beautiful sliding visual transition on the 'nested_if' node
+      // making it slide into the bottom-right sys::residue area!
+      if (renderer) {
+        const nestedIfNode = Array.from(renderer.nodes.values()).find(n => n.id === "nested_if");
+        if (nestedIfNode) {
+          nestedIfNode.isRemoved = true;
+          nestedIfNode.slideProgress = 0;
+          nestedIfNode.targetX = renderer.canvas.width / window.devicePixelRatio - 120;
+          nestedIfNode.targetY = renderer.canvas.height / window.devicePixelRatio - 120;
+        }
+      }
+    }
+
+    setTimeout(() => {
+      systemStatus = "IDLE (LOCK_FREE_BUS_SYNC)";
+    }, 4000);
+  }
+
+  // Smart SSR Action 3: Safe Nesting Inversion with Vacuum Check
+  function handleSSRSafeSwap() {
+    systemStatus = "SMART SSR: RUNNING VACUUM ASSERTER (~ MUTATION)...";
+    
+    if (!hCypherCode.includes("[IF_A]")) {
+      hCypherCode += `\n// Safe nested scopes prior to Smart SSR\n[IF_A](kernel, parser)\n[IF_B](sync, memory)\n`;
+      systemStatus = "SMART SSR: NESTED SCOPES INJECTED";
+    } else {
+      if (hCypherCode.includes("[IF_A](kernel, parser)\n[IF_B](sync, memory)")) {
+        systemStatus = "SMART SSR: INVERTING NESTED SCOPES SAFELY";
+        hCypherCode = hCypherCode.replace(
+          "[IF_A](kernel, parser)\n[IF_B](sync, memory)",
+          "[IF_B](sync, memory)\n[IF_A](kernel, parser)"
+        );
+        if (renderer) {
+          renderer.illuminatePath(["kernel", "parser", "sync", "memory"]);
+        }
+      } else {
+        systemStatus = "SMART SSR: REVERSING NESTED SCOPES SWAP";
+        hCypherCode = hCypherCode.replace(
+          "[IF_B](sync, memory)\n[IF_A](kernel, parser)",
+          "[IF_A](kernel, parser)\n[IF_B](sync, memory)"
+        );
+        if (renderer) {
+          renderer.illuminatePath(["sync", "memory", "kernel", "parser"]);
+        }
+      }
+    }
+
+    setTimeout(() => {
+      systemStatus = "IDLE (LOCK_FREE_BUS_SYNC)";
+      if (renderer) renderer.illuminatePath([]);
+    }, 4000);
+  }
+
   // 4. Customization state & logic
   let currentBgColor = $state('#0b0f19');
 
@@ -411,6 +518,20 @@ MATCH {
             </div>
           </div>
         {/if}
+      </div>
+
+      <!-- Smart SSR Refactoring Simulator Panel -->
+      <div class="ssr-simulator-bar">
+        <span class="ssr-bar-title">Smart SSR Simulator:</span>
+        <button class="btn btn-ssr" onclick={handleSSRReorder} title="Swap Term Order (A + B ⇒ B + A)">
+          Reorder Terms
+        </button>
+        <button class="btn btn-ssr" onclick={handleSSRFlatten} title="Flatten Nested Conditionals (If/Else)">
+          Flatten Conditionals
+        </button>
+        <button class="btn btn-ssr" onclick={handleSSRSafeSwap} title="Invert Nested Scopes safely with Vacuum check (~)">
+          Safe Scope Inversion
+        </button>
       </div>
 
       <!-- Action Controls and Simulation bar -->
@@ -772,6 +893,40 @@ MATCH {
     font-size: 9px;
     color: #4f566b;
     text-align: right;
+  }
+
+  /* Smart SSR Simulator Bar */
+  .ssr-simulator-bar {
+    display: flex;
+    gap: 12px;
+    padding: 10px 20px;
+    background: #12131c;
+    border-top: 1px solid #1f2833;
+    border-bottom: 1px solid rgba(255,255,255,0.02);
+    align-items: center;
+    font-size: 11px;
+    z-index: 10;
+  }
+
+  .ssr-bar-title {
+    color: #a855f7;
+    font-weight: bold;
+    text-shadow: 0 0 4px rgba(168, 85, 247, 0.4);
+    letter-spacing: 0.5px;
+    margin-right: 8px;
+  }
+
+  .btn-ssr {
+    background: rgba(168, 85, 247, 0.05);
+    color: #c084fc;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .btn-ssr:hover {
+    background: rgba(168, 85, 247, 0.15);
+    border-color: #a855f7;
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+    color: #ffffff;
   }
 
   /* Control buttons at the bottom of the view */
