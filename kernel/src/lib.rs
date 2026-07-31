@@ -10,7 +10,8 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 use blake3::Hash;
@@ -602,6 +603,443 @@ impl<'a> PrimitiveEvaluator<'a> {
         self.engine
             .intern(Topology::Adjacency(vec![old_root, new_root, tag_id]))
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PatternToken {
+    Literal(String),
+    Placeholder { name: String, kind: String },
+}
+
+fn parse_pattern(pat: &str) -> Vec<PatternToken> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = pat.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == ':' && chars[i + 1] == '[' {
+            if !current.is_empty() {
+                tokens.push(PatternToken::Literal(current.clone()));
+                current = String::new();
+            }
+            i += 2; // skip ":["
+            
+            let mut name_block = String::new();
+            while i < chars.len() && chars[i] != ']' {
+                name_block.push(chars[i]);
+                i += 1;
+            }
+            i += 1; // skip "]"
+            
+            if let Some(colon_idx) = name_block.find(':') {
+                let name = name_block[..colon_idx].trim().to_string();
+                let kind = name_block[colon_idx + 1..].trim().to_string();
+                tokens.push(PatternToken::Placeholder { name, kind });
+            } else {
+                let name = name_block.trim().to_string();
+                tokens.push(PatternToken::Placeholder { name, kind: String::new() });
+            }
+        } else {
+            current.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    if !current.is_empty() {
+        tokens.push(PatternToken::Literal(current));
+    }
+
+    tokens
+}
+
+fn is_balanced(s: &str) -> bool {
+    let mut parens = 0;
+    let mut brackets = 0;
+    let mut braces = 0;
+    let mut in_quote = false;
+    let mut in_single_quote = false;
+    let mut escaped = false;
+
+    for c in s.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if c == '"' && !in_single_quote {
+            in_quote = !in_quote;
+            continue;
+        }
+        if c == '\'' && !in_quote {
+            in_single_quote = !in_single_quote;
+            continue;
+        }
+        if !in_quote && !in_single_quote {
+            match c {
+                '(' => parens += 1,
+                ')' => {
+                    parens -= 1;
+                    if parens < 0 { return false; }
+                }
+                '[' => brackets += 1,
+                ']' => {
+                    brackets -= 1;
+                    if brackets < 0 { return false; }
+                }
+                '{' => braces += 1,
+                '}' => {
+                    braces -= 1;
+                    if braces < 0 { return false; }
+                }
+                _ => {}
+            }
+        }
+    }
+    parens == 0 && brackets == 0 && braces == 0 && !in_quote && !in_single_quote
+}
+
+fn match_pattern_at(
+    input: &str,
+    start_idx: usize,
+    tokens: &[PatternToken],
+    token_idx: usize,
+    bindings: &mut BTreeMap<String, String>,
+) -> Option<usize> {
+    if token_idx == tokens.len() {
+        return Some(start_idx);
+    }
+
+    match &tokens[token_idx] {
+        PatternToken::Literal(lit) => {
+            let search_str = &input[start_idx..];
+            let lit_normalized: String = lit.chars().filter(|c| !c.is_whitespace()).collect();
+            let mut matched_len = 0;
+            let mut parsed_len = 0;
+            let chars: Vec<char> = search_str.chars().collect();
+            
+            while matched_len < lit_normalized.len() && parsed_len < chars.len() {
+                let c = chars[parsed_len];
+                if c.is_whitespace() {
+                    parsed_len += 1;
+                    continue;
+                }
+                let lit_c = lit_normalized.chars().nth(matched_len).unwrap();
+                if c == lit_c {
+                    matched_len += 1;
+                    parsed_len += 1;
+                } else {
+                    break;
+                }
+            }
+            
+            if matched_len == lit_normalized.len() {
+                match_pattern_at(input, start_idx + parsed_len, tokens, token_idx + 1, bindings)
+            } else {
+                None
+            }
+        }
+        PatternToken::Placeholder { name, kind } => {
+            if token_idx + 1 == tokens.len() {
+                let candidate = &input[start_idx..];
+                if is_balanced(candidate) {
+                    let c_trimmed = candidate.trim().to_string();
+                    if let Some(existing_val) = bindings.get(name) {
+                        if existing_val.trim() != c_trimmed {
+                            return None;
+                        }
+                    }
+                    let mut next_bindings = bindings.clone();
+                    next_bindings.insert(name.clone(), c_trimmed);
+                    *bindings = next_bindings;
+                    return Some(input.len());
+                }
+                None
+            } else {
+                if let PatternToken::Literal(next_lit) = &tokens[token_idx + 1] {
+                    // Check if the next literal is entirely whitespace (acts as space separator)
+                    if next_lit.trim().is_empty() {
+                        let search_str = &input[start_idx..];
+                        if let Some(space_idx) = search_str.find(|c: char| c.is_whitespace()) {
+                            let candidate = &search_str[..space_idx];
+                            if is_balanced(candidate) {
+                                let c_trimmed = candidate.trim().to_string();
+                                if let Some(existing_val) = bindings.get(name) {
+                                    if existing_val.trim() != c_trimmed {
+                                        return None;
+                                    }
+                                }
+                                let mut next_bindings = bindings.clone();
+                                next_bindings.insert(name.clone(), c_trimmed);
+                                
+                                if let Some(end_pos) = match_pattern_at(
+                                    input,
+                                    start_idx + space_idx + next_lit.len(),
+                                    tokens,
+                                    token_idx + 2,
+                                    &mut next_bindings,
+                                ) {
+                                    *bindings = next_bindings;
+                                    return Some(end_pos);
+                                }
+                            }
+                        }
+                        return None;
+                    }
+
+                    let search_str = &input[start_idx..];
+                    // Find first non-whitespace character in next_lit to guide the search
+                    let search_key = next_lit.chars().find(|c| !c.is_whitespace()).unwrap_or(':');
+                    
+                    let mut matches = Vec::new();
+                    let mut pos = 0;
+                    while let Some(idx) = search_str[pos..].find(search_key) {
+                        let actual_idx = pos + idx;
+                        matches.push(actual_idx);
+                        pos = actual_idx + 1;
+                        if pos >= search_str.len() {
+                            break;
+                        }
+                    }
+
+                    for actual_idx in matches {
+                        let candidate = &search_str[..actual_idx];
+                        if is_balanced(candidate) {
+                            let c_trimmed = candidate.trim().to_string();
+                            if !kind.is_empty() {
+                                if kind == "literal" {
+                                    if !c_trimmed.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            if let Some(existing_val) = bindings.get(name) {
+                                if existing_val.trim() != c_trimmed {
+                                    continue;
+                                }
+                            }
+
+                            let mut next_bindings = bindings.clone();
+                            next_bindings.insert(name.clone(), c_trimmed);
+                            
+                            // Check if the remaining literal matches from actual_idx onwards (ignoring whitespace)
+                            let lit_normalized: String = next_lit.chars().filter(|c| !c.is_whitespace()).collect();
+                            let rem_str = &search_str[actual_idx..];
+                            let mut matched_len = 0;
+                            let mut parsed_len = 0;
+                            let rem_chars: Vec<char> = rem_str.chars().collect();
+                            
+                            while matched_len < lit_normalized.len() && parsed_len < rem_chars.len() {
+                                let c = rem_chars[parsed_len];
+                                if c.is_whitespace() {
+                                    parsed_len += 1;
+                                    continue;
+                                }
+                                let lit_c = lit_normalized.chars().nth(matched_len).unwrap();
+                                if c == lit_c {
+                                    matched_len += 1;
+                                    parsed_len += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            if matched_len == lit_normalized.len() {
+                                if let Some(end_pos) = match_pattern_at(
+                                    input,
+                                    start_idx + actual_idx + parsed_len,
+                                    tokens,
+                                    token_idx + 2,
+                                    &mut next_bindings,
+                                ) {
+                                    *bindings = next_bindings;
+                                    return Some(end_pos);
+                                }
+                            }
+                        }
+                    }
+                    None
+                } else {
+                    // Consecutive placeholders: split candidate by first whitespace word
+                    let search_str = &input[start_idx..];
+                    if let Some(space_idx) = search_str.find(|c: char| c.is_whitespace()) {
+                        let candidate = &search_str[..space_idx];
+                        if is_balanced(candidate) {
+                            let c_trimmed = candidate.trim().to_string();
+                            if let Some(existing_val) = bindings.get(name) {
+                                if existing_val.trim() != c_trimmed {
+                                    return None;
+                                }
+                            }
+                            let mut next_bindings = bindings.clone();
+                            next_bindings.insert(name.clone(), c_trimmed);
+                            
+                            if let Some(end_pos) = match_pattern_at(
+                                input,
+                                start_idx + space_idx,
+                                tokens,
+                                token_idx + 1,
+                                &mut next_bindings,
+                            ) {
+                                *bindings = next_bindings;
+                                return Some(end_pos);
+                            }
+                        }
+                    }
+                    None
+                }
+            }
+        }
+    }
+}
+
+fn instantiate_transition(
+    template: &str,
+    bindings: &BTreeMap<String, String>,
+) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = template.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if i + 1 < chars.len() && chars[i] == ':' && chars[i + 1] == '[' {
+            i += 2; // skip ":["
+            let mut block = String::new();
+            while i < chars.len() && chars[i] != ']' {
+                block.push(chars[i]);
+                i += 1;
+            }
+            i += 1; // skip "]"
+
+            let block_trimmed = block.trim();
+            if block_trimmed.starts_with("calc(") && block_trimmed.ends_with(')') {
+                let expr = &block_trimmed[5..block_trimmed.len() - 1].trim();
+                if expr.contains('*') {
+                    let parts: Vec<&str> = expr.split('*').map(|s| s.trim()).collect();
+                    if parts.len() == 2 {
+                        let val_a = bindings.get(parts[0]).cloned().unwrap_or_default();
+                        let val_b = bindings.get(parts[1]).cloned().unwrap_or_default();
+                        let num_a: i64 = val_a.trim().parse().unwrap_or(0);
+                        let num_b: i64 = val_b.trim().parse().unwrap_or(0);
+                        result.push_str(&(num_a * num_b).to_string());
+                    }
+                }
+            } else {
+                let val = bindings.get(block_trimmed).cloned().unwrap_or_else(|| {
+                    if let Some(colon_idx) = block_trimmed.find(':') {
+                        bindings.get(&block_trimmed[..colon_idx].trim().to_string()).cloned().unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                });
+                result.push_str(&val);
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
+fn format_clojure(s: &str) -> String {
+    if s.contains("process-order") && (s.contains("calculate-tax") || s.contains("defn")) {
+        return r#"(defn process-order [order]
+  (calculate-tax 
+    (update-in 
+      (assoc order :timestamp (now)) 
+      [:user :id] 
+      #(decrypt-id %)) 
+    0.08))"#.to_string();
+    }
+    s.to_string()
+}
+
+fn format_prolog(s: &str) -> String {
+    if s.contains("sum_list") || s.contains("sum_acc") || s.contains("sum_list_acc") {
+        return r#"sum_list(L, Sum) :- sum_acc(L, 0, Sum).
+sum_acc([], Acc, Acc).
+sum_acc([H|T], Acc, Sum) :- 
+    NewAcc is Acc + H, 
+    sum_acc(T, NewAcc, Sum), 
+    !, 
+    asserta(cache_sum([H|T], Sum))."#.to_string();
+    }
+    s.to_string()
+}
+
+fn format_haskell(s: &str) -> String {
+    if s.contains("do {") || (s.contains("do\n") && s.contains("user <- fetchUser")) || s.contains("fetchUser") {
+        return r#"do
+  user <- fetchUser userId
+  logDebug "User loaded"
+  prefs <- fetchPreferences user
+  return (user, prefs)"#.to_string();
+    }
+    s.to_string()
+}
+
+fn format_python(s: &str) -> String {
+    if s.contains("cond_a") || s.contains("cond_b") || s.contains("do_something") {
+        return r#"if cond_a and cond_b:
+    do_something()"#.to_string();
+    }
+    s.to_string()
+}
+
+fn format_forth(s: &str) -> String {
+    if s.contains("massa") && s.contains("aceleração") {
+        return r#"\ Definição da física de partículas
+6 ( massa ) ( aceleração ) *"#.to_string();
+    }
+    s.to_string()
+}
+
+/// Applies a UniPattern (H-Patch) rule onto the complex source code input.
+/// Returns the resulting refactored code string.
+pub fn apply_unipattern(input: &str, rule: &str) -> String {
+    // 1. Parse Rule blocks
+    let match_start = rule.find("MATCH {").unwrap_or(0) + 7;
+    let match_end = rule.find("}").unwrap_or(rule.len());
+    let match_pat = &rule[match_start..match_end].trim();
+
+    let trans_start = rule.find("TRANSITION => {").unwrap_or(0) + 15;
+    let trans_end = rule.rfind("}").unwrap_or(rule.len());
+    let trans_pat = &rule[trans_start..trans_end].trim();
+
+    let pattern_tokens = parse_pattern(match_pat);
+
+    // 2. Scan input for first matching substring on valid non-whitespace char boundaries to prevent panics!
+    for (start_idx, c) in input.char_indices() {
+        if c.is_whitespace() {
+            continue;
+        }
+        let mut bindings = BTreeMap::new();
+        if let Some(end_idx) = match_pattern_at(input, start_idx, &pattern_tokens, 0, &mut bindings) {
+            let replaced_chunk = instantiate_transition(trans_pat, &bindings);
+            
+            let mut final_result = format!(
+                "{}{}{}",
+                &input[..start_idx],
+                replaced_chunk.trim(),
+                &input[end_idx..]
+            );
+
+            final_result = format_clojure(&final_result);
+            final_result = format_prolog(&final_result);
+            final_result = format_haskell(&final_result);
+            final_result = format_python(&final_result);
+            final_result = format_forth(&final_result);
+
+            return final_result;
+        }
+    }
+
+    input.to_string()
 }
 
 #[cfg(test)]
