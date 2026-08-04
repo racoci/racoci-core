@@ -534,6 +534,9 @@ sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sent
       const temp = nodeA.widgetType;
       nodeA.widgetType = nodeB.widgetType;
       nodeB.widgetType = temp;
+      
+      // Force top-level re-assignment to trigger Svelte 5 reactivity instantly!
+      this.layoutTree = { ...this.layoutTree };
     }
   }
 

@@ -12,6 +12,7 @@
   let { node }: { node: WidgetNodeType } = $props();
 
   let isDraggingHeader = $state(false);
+  let isDragOver = $state(false);
 
   const widgetTypes = [
     { value: 'editor', label: 'Editor (H-Cypher)', icon: '✏️' },
@@ -24,6 +25,7 @@
   function handleDragStart(e: DragEvent) {
     if (e.dataTransfer) {
       e.dataTransfer.setData('text/plain', node.id);
+      e.dataTransfer.effectAllowed = 'move';
       isDraggingHeader = true;
     }
   }
@@ -34,10 +36,23 @@
 
   function handleDragOver(e: DragEvent) {
     e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  function handleDragEnter(e: DragEvent) {
+    e.preventDefault();
+    isDragOver = true;
+  }
+
+  function handleDragLeave() {
+    isDragOver = false;
   }
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();
+    isDragOver = false;
     if (e.dataTransfer) {
       const sourceId = e.dataTransfer.getData('text/plain');
       if (sourceId && sourceId !== node.id) {
@@ -58,7 +73,10 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div 
   class="widget-pane" 
+  class:drag-over={isDragOver}
   ondragover={handleDragOver} 
+  ondragenter={handleDragEnter}
+  ondragleave={handleDragLeave}
   ondrop={handleDrop}
 >
   <!-- Window/Widget Header Bar -->
@@ -128,6 +146,13 @@
     background-color: #0b0c10;
     box-sizing: border-box;
     border: 1px solid rgba(255, 255, 255, 0.015);
+    transition: all 0.15s ease-in-out;
+  }
+
+  .widget-pane.drag-over {
+    border: 1px dashed #a855f7;
+    background-color: rgba(168, 85, 247, 0.04);
+    box-shadow: inset 0 0 10px rgba(168, 85, 247, 0.15);
   }
 
   .widget-header {
