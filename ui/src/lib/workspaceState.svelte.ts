@@ -472,6 +472,60 @@ sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sent
     }
   }
 
+  // Split Widget Node into SplitNode with 2 children
+  splitPane(widgetId: string, direction: 'vertical' | 'horizontal') {
+    this.layoutTree = this.splitInTree(this.layoutTree, widgetId, direction);
+  }
+
+  private splitInTree(node: LayoutNode, targetId: string, direction: 'vertical' | 'horizontal'): LayoutNode {
+    if (node.type === 'widget') {
+      if (node.id === targetId) {
+        const clonedWidget: WidgetNode = {
+          type: 'widget',
+          id: `widget-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          widgetType: node.widgetType
+        };
+        return {
+          type: 'split',
+          split: direction,
+          percent: 50,
+          children: [node, clonedWidget]
+        };
+      }
+      return node;
+    }
+    const left = this.splitInTree(node.children[0], targetId, direction);
+    const right = this.splitInTree(node.children[1], targetId, direction);
+    node.children = [left, right];
+    return node;
+  }
+
+  // Close Pane and merge its sibling up
+  closePane(widgetId: string) {
+    if (this.layoutTree.type === 'widget') {
+      return;
+    }
+    const newTree = this.removeFromTree(this.layoutTree, widgetId);
+    if (newTree) {
+      this.layoutTree = newTree;
+    }
+  }
+
+  private removeFromTree(node: LayoutNode, targetId: string): LayoutNode | null {
+    if (node.type === 'widget') {
+      if (node.id === targetId) {
+        return null;
+      }
+      return node;
+    }
+    const left = this.removeFromTree(node.children[0], targetId);
+    const right = this.removeFromTree(node.children[1], targetId);
+    if (left === null) return right;
+    if (right === null) return left;
+    node.children = [left, right];
+    return node;
+  }
+
   // Swap Widget Types inside Layout Tree
   swapWidgets(idA: string, idB: string) {
     const nodeA = this.findWidgetNode(this.layoutTree, idA);
@@ -483,104 +537,12 @@ sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sent
     }
   }
 
-  // Split Widget Node into SplitNode with 2 children
-  splitPane(widgetId: string, direction: 'vertical' | 'horizontal') {
-    const parentAndIndex = this.findParentOfWidget(this.layoutTree, widgetId);
-    if (parentAndIndex) {
-      const [parent, index] = parentAndIndex;
-      const currentWidget = parent.children[index] as WidgetNode;
-      const newWidget: WidgetNode = {
-        type: 'widget',
-        id: `widget-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        widgetType: currentWidget.widgetType === 'editor' ? 'canvas' : 'editor'
-      };
-      const newSplit: SplitNode = {
-        type: 'split',
-        split: direction,
-        percent: 50,
-        children: [currentWidget, newWidget]
-      };
-      parent.children[index] = newSplit;
-    } else if (this.layoutTree.type === 'widget' && this.layoutTree.id === widgetId) {
-      const currentWidget = this.layoutTree;
-      const newWidget: WidgetNode = {
-        type: 'widget',
-        id: `widget-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        widgetType: 'canvas'
-      };
-      this.layoutTree = {
-        type: 'split',
-        split: direction,
-        percent: 50,
-        children: [currentWidget, newWidget]
-      };
-    }
-  }
-
-  // Close Pane and merge its sibling up
-  closePane(widgetId: string) {
-    const grandparentAndIndex = this.findParentOfSplitContainingWidget(this.layoutTree, widgetId);
-    if (grandparentAndIndex) {
-      const [grandparent, parentIndex, siblingNode] = grandparentAndIndex;
-      grandparent.children[parentIndex] = siblingNode;
-    } else {
-      if (this.layoutTree.type === 'split') {
-        if (this.layoutTree.children[0].type === 'widget' && this.layoutTree.children[0].id === widgetId) {
-          this.layoutTree = this.layoutTree.children[1];
-        } else if (this.layoutTree.children[1].type === 'widget' && this.layoutTree.children[1].id === widgetId) {
-          this.layoutTree = this.layoutTree.children[0];
-        }
-      }
-    }
-  }
-
   // Find widget leaf node by ID
   private findWidgetNode(node: LayoutNode, id: string): WidgetNode | null {
     if (node.type === 'widget') {
       return node.id === id ? node : null;
     }
     return this.findWidgetNode(node.children[0], id) || this.findWidgetNode(node.children[1], id);
-  }
-
-  // Find [parent split node, index of target child] of a widget node ID
-  private findParentOfWidget(node: LayoutNode, id: string): [SplitNode, number] | null {
-    if (node.type === 'widget') return null;
-    if (node.children[0].type === 'widget' && node.children[0].id === id) {
-      return [node, 0];
-    }
-    if (node.children[1].type === 'widget' && node.children[1].id === id) {
-      return [node, 1];
-    }
-    return this.findParentOfWidget(node.children[0], id) || this.findParentOfWidget(node.children[1], id);
-  }
-
-  // Find grandparent split containing a split node that contains target widget node ID
-  // Returns [grandparent, grandparent's child index (0/1), sibling of target widget node to bubble up]
-  private findParentOfSplitContainingWidget(node: LayoutNode, id: string): [SplitNode, number, LayoutNode] | null {
-    if (node.type === 'widget') return null;
-    
-    const c0 = node.children[0];
-    if (c0.type === 'split') {
-      if (c0.children[0].type === 'widget' && c0.children[0].id === id) {
-        return [node, 0, c0.children[1]];
-      }
-      if (c0.children[1].type === 'widget' && c0.children[1].id === id) {
-        return [node, 0, c0.children[0]];
-      }
-    }
-
-    const c1 = node.children[1];
-    if (c1.type === 'split') {
-      if (c1.children[0].type === 'widget' && c1.children[0].id === id) {
-        return [node, 1, c1.children[1]];
-      }
-      if (c1.children[1].type === 'widget' && c1.children[1].id === id) {
-        return [node, 1, c1.children[0]];
-      }
-    }
-
-    return this.findParentOfSplitContainingWidget(node.children[0], id) || 
-           this.findParentOfSplitContainingWidget(node.children[1], id);
   }
 }
 

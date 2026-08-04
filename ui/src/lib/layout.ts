@@ -12,7 +12,7 @@ export interface SplitNode {
 export interface WidgetNode {
   type: 'widget';
   id: string;
-  widgetType: 'editor' | 'canvas' | 'projection3d' | 'workspaces';
+  widgetType: 'editor' | 'canvas' | 'projection3d' | 'workspaces' | 'ssr_simulator';
 }
 
 export type LayoutNode = SplitNode | WidgetNode;

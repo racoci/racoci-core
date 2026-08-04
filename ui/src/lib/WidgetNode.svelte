@@ -6,6 +6,7 @@
   import View2D from './View2D.svelte';
   import View3D from './View3D.svelte';
   import WorkspacesView from './WorkspacesView.svelte';
+  import SSRSimulatorView from './SSRSimulatorView.svelte';
 
   // Props using Svelte 5 runes
   let { node }: { node: WidgetNodeType } = $props();
@@ -16,7 +17,8 @@
     { value: 'editor', label: 'Editor (H-Cypher)', icon: '✏️' },
     { value: 'canvas', label: '2D View (Hypergraph)', icon: '👁️' },
     { value: 'projection3d', label: '3D View (Projection)', icon: '🌐' },
-    { value: 'workspaces', label: 'Workspaces List', icon: '🗂️' }
+    { value: 'workspaces', label: 'Workspaces List', icon: '🗂️' },
+    { value: 'ssr_simulator', label: 'Smart SSR Simulator', icon: '⚡' }
   ];
 
   function handleDragStart(e: DragEvent) {
@@ -109,6 +111,8 @@
         <View3D />
       {:else if node.widgetType === 'workspaces'}
         <WorkspacesView />
+      {:else if node.widgetType === 'ssr_simulator'}
+        <SSRSimulatorView />
       {/if}
     {/if}
   </div>
