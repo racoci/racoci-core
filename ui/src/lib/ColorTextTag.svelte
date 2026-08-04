@@ -1,7 +1,7 @@
 <!-- ColorTextTag.svelte (Svelte 5) -->
 <script lang="ts">
   import TextTag from './TextTag.svelte';
-  import { getRelativeLuminance } from './ColorMath';
+  import { getRelativeLuminance, hexToRgb } from './ColorMath';
 
   // Props using Svelte 5 runes
   let {
@@ -30,8 +30,10 @@
   // Derive contrast-safe palette options
   let safePalette = $derived(
     allowedPalette.filter(option => {
-      const optionL = getRelativeLuminance(option);
-      const bgL = getRelativeLuminance(bgColor);
+      const optionRgb = hexToRgb(option);
+      const optionL = getRelativeLuminance(optionRgb.r, optionRgb.g, optionRgb.b);
+      const bgRgb = hexToRgb(bgColor);
+      const bgL = getRelativeLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
       const dl = Math.abs(optionL - bgL);
       // Only keep options that have at least 0.35 relative luminance difference
       return dl >= 0.35;
