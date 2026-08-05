@@ -416,6 +416,71 @@ export class CanvasRenderer {
       });
     });
 
+    // 2.6 Edge-to-Node Repulsion Force
+    // To avoid overplottings and edge crossings, we find the closest point P 
+    // on each edge segment and apply an outward repulsion force on any unrelated nodes N.
+    this.edges.forEach(edge => {
+      const sCoord = this.resolveCoordinate(edge.source);
+      const tCoord = this.resolveCoordinate(edge.target);
+
+      if (sCoord && tCoord) {
+        const ax = sCoord.x;
+        const ay = sCoord.y;
+        const bx = tCoord.x;
+        const by = tCoord.y;
+
+        const abx = bx - ax;
+        const aby = by - ay;
+        const segmentLenSq = abx * abx + aby * aby;
+        if (segmentLenSq === 0) return;
+
+        nodesArr.forEach(node => {
+          if (node.isRemoved) return;
+          // An edge does not repel its own endpoints
+          if (node.id === edge.source || node.id === edge.target) return;
+
+          // Find projection of node N onto segment AB
+          const anx = node.x - ax;
+          const any = node.y - ay;
+          const t = Math.max(0, Math.min(1, (anx * abx + any * aby) / segmentLenSq));
+
+          // Closest point P on segment
+          const px = ax + t * abx;
+          const py = ay + t * aby;
+
+          const dx = node.x - px;
+          const dy = node.y - py;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+          // Repel nodes if they are too close to the segment
+          const threshold = 110; // px margin of separation
+          if (dist < threshold) {
+            const force = 1000 / (dist * dist);
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+
+            if (node.id !== this.draggedNodeId) {
+              node.vx += fx;
+              node.vy += fy;
+            }
+
+            // Symmetrically push the edge endpoints away from the node!
+            const sNode = this.nodes.get(edge.source);
+            if (sNode && sNode.id !== this.draggedNodeId && !sNode.isRemoved) {
+              sNode.vx -= fx * (1 - t) * 0.5;
+              sNode.vy -= fy * (1 - t) * 0.5;
+            }
+
+            const tNode = this.nodes.get(edge.target);
+            if (tNode && tNode.id !== this.draggedNodeId && !tNode.isRemoved) {
+              tNode.vx -= fx * t * 0.5;
+              tNode.vy -= fy * t * 0.5;
+            }
+          }
+        });
+      }
+    });
+
     // 3. Center Gravity & Apply Velocities
     nodesArr.forEach(node => {
       if (node.isRemoved) {

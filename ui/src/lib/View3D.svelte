@@ -205,6 +205,61 @@
           n2.vz -= fz;
         }
       });
+
+      // 2.5 3D Edge-to-Node Repulsion Force
+      workspaceState.parseResult.edges.forEach(edge => {
+        const n1 = nodes3D.get(edge.source);
+        const n2 = nodes3D.get(edge.target);
+
+        if (n1 && n2) {
+          const abx = n2.x - n1.x;
+          const aby = n2.y - n1.y;
+          const abz = n2.z - n1.z;
+          const segmentLenSq = abx * abx + aby * aby + abz * abz;
+          if (segmentLenSq === 0) return;
+
+          nodes.forEach(node => {
+            if (node.id === edge.source || node.id === edge.target) return;
+
+            // Find projection of node N onto segment AB in 3D
+            const anx = node.x - n1.x;
+            const any = node.y - n1.y;
+            const anz = node.z - n1.z;
+            const t = Math.max(0, Math.min(1, (anx * abx + any * aby + anz * abz) / segmentLenSq));
+
+            // Closest point P on 3D segment
+            const px = n1.x + t * abx;
+            const py = n1.y + t * aby;
+            const pz = n1.z + t * abz;
+
+            const dx = node.x - px;
+            const dy = node.y - py;
+            const dz = node.z - pz;
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+
+            const threshold = 70; // 3D distance margin
+            if (dist < threshold) {
+              const force = 800 / (dist * dist);
+              const fx = (dx / dist) * force;
+              const fy = (dy / dist) * force;
+              const fz = (dz / dist) * force;
+
+              node.vx += fx;
+              node.vy += fy;
+              node.vz += fz;
+
+              // Symmetrically push the edge endpoints away from the node!
+              n1.vx -= fx * (1 - t) * 0.5;
+              n1.vy -= fy * (1 - t) * 0.5;
+              n1.vz -= fz * (1 - t) * 0.5;
+
+              n2.vx -= fx * t * 0.5;
+              n2.vy -= fy * t * 0.5;
+              n2.vz -= fz * t * 0.5;
+            }
+          });
+        }
+      });
     }
 
     // 3. Central gravity and integration
