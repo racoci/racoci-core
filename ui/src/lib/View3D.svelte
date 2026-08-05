@@ -28,6 +28,7 @@
   let isDragging = $state(false);
   let isDraggingCamera = $state(false);
   let draggedNodeId = $state<string | null>(null);
+  let hoveredNodeId = $state<string | null>(null);
   let lastMouseX = 0;
   let lastMouseY = 0;
 
@@ -84,15 +85,14 @@
     e.preventDefault();
     if (!canvasElement) return;
 
-    const rect = canvasElement.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    // Use unscaled e.offsetX and offsetY for 100% zoom and scroll-independent picking!
+    const clickX = e.offsetX;
+    const clickY = e.offsetY;
 
     // Pick 3D node closest to screen click coordinate
     let clickedNodeId: string | null = null;
     let closestDist = Infinity;
 
-    // We add a highly detailed console debug log and increase the click threshold to coord.r + 30 for perfect UX picking!
     console.log("3D PICKING START:", { clickX, clickY, numNodes: latestProjCoords.size });
 
     for (const [id, coord] of latestProjCoords.entries()) {
@@ -100,9 +100,9 @@
       const dy = clickY - coord.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
-      console.log(`Checking Node [${id}]: dist=${dist.toFixed(1)}px, activeThreshold=${(coord.r + 30).toFixed(1)}px, pos=(${coord.x.toFixed(1)}, ${coord.y.toFixed(1)})`);
+      console.log(`Checking Node [${id}]: dist=${dist.toFixed(1)}px, activeThreshold=${(coord.r + 25).toFixed(1)}px, pos=(${coord.x.toFixed(1)}, ${coord.y.toFixed(1)})`);
 
-      if (dist < coord.r + 30 && dist < closestDist) {
+      if (dist < coord.r + 25 && dist < closestDist) {
         clickedNodeId = id;
         closestDist = dist;
       }
@@ -113,11 +113,13 @@
       draggedNodeId = clickedNodeId;
       isDragging = true;
       isDraggingCamera = false;
+      canvasElement.style.cursor = 'grabbing';
     } else {
       console.log("3D CLICKS MISSED - ORBITING CAMERA...");
       draggedNodeId = null;
       isDragging = true;
       isDraggingCamera = true;
+      canvasElement.style.cursor = 'grabbing';
     }
 
     lastMouseX = e.clientX;
@@ -161,8 +163,49 @@
     isDragging = false;
     isDraggingCamera = false;
     draggedNodeId = null;
+    if (canvasElement) {
+      canvasElement.style.cursor = hoveredNodeId ? 'pointer' : 'grab';
+    }
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
+  }
+
+  // Hover detection and cursor updates when NOT dragging
+  function handleCanvasMouseMove(e: MouseEvent) {
+    if (isDragging) return;
+
+    const clickX = e.offsetX;
+    const clickY = e.offsetY;
+
+    let matchedId: string | null = null;
+    let closestDist = Infinity;
+
+    for (const [id, coord] of latestProjCoords.entries()) {
+      const dx = clickX - coord.x;
+      const dy = clickY - coord.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < coord.r + 25 && dist < closestDist) {
+        matchedId = id;
+        closestDist = dist;
+      }
+    }
+
+    hoveredNodeId = matchedId;
+
+    if (canvasElement) {
+      if (matchedId) {
+        canvasElement.style.cursor = 'pointer';
+      } else {
+        canvasElement.style.cursor = 'grab';
+      }
+    }
+  }
+
+  function handleCanvasMouseLeave() {
+    hoveredNodeId = null;
+    if (canvasElement) {
+      canvasElement.style.cursor = 'default';
+    }
   }
 
   onMount(() => {
@@ -526,9 +569,24 @@
 
     // 3. Draw Nodes (spherical shading based on painter sorting)
     projectedNodes.forEach(pn => {
+      const isHovered = pn.id === hoveredNodeId;
+      const isDragged = pn.id === draggedNodeId;
       const alpha = Math.max(0.15, Math.min(1.0, 1 - (pn.rotZ + 150) / 300));
       ctx.save();
       ctx.globalAlpha = alpha;
+
+      // Draw a glowing halo aura if hovered or dragged
+      if (isHovered || isDragged) {
+        ctx.save();
+        ctx.shadowColor = '#66fcf1';
+        ctx.shadowBlur = 15;
+        ctx.strokeStyle = '#66fcf1';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(pn.projX, pn.projY, pn.projRadius + 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
 
       // 3D Spherical Shading with radial gradient
       const gradient = ctx.createRadialGradient(
@@ -620,6 +678,8 @@
   <canvas 
     bind:this={canvasElement} 
     onmousedown={handleMouseDown}
+    onmousemove={handleCanvasMouseMove}
+    onmouseleave={handleCanvasMouseLeave}
     title="Drag mouse to rotate 3D topology"
   ></canvas>
   <div class="view3d-overlay">
