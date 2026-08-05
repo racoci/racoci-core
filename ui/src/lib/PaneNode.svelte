@@ -2,6 +2,7 @@
 <script lang="ts">
   import type { SplitNode } from './layout.js';
   import LayoutNode from './LayoutNode.svelte';
+  import { workspaceState } from './workspaceState.svelte.js';
 
   // Props using Svelte 5 runes
   let { node }: { node: SplitNode } = $props();
@@ -31,6 +32,9 @@
 
     // Clamp partition between 10% and 90% for layout sanity
     node.percent = Math.max(10, Math.min(90, percentage));
+
+    // Trigger top-level Svelte 5 state reactivity reassign!
+    workspaceState.updateLayout();
   }
 
   function stopResize() {

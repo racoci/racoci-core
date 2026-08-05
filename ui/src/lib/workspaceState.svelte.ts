@@ -540,6 +540,11 @@ sentence(S, S0, S) :- noun_phrase(N, S0, S1), !, verb_phrase(V, S1, S), S = sent
     }
   }
 
+  // Trigger Svelte 5 reactivity update on the entire layout tree
+  updateLayout() {
+    this.layoutTree = { ...this.layoutTree };
+  }
+
   // Find widget leaf node by ID
   private findWidgetNode(node: LayoutNode, id: string): WidgetNode | null {
     if (node.type === 'widget') {
