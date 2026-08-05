@@ -92,21 +92,29 @@
     let clickedNodeId: string | null = null;
     let closestDist = Infinity;
 
+    // We add a highly detailed console debug log and increase the click threshold to coord.r + 30 for perfect UX picking!
+    console.log("3D PICKING START:", { clickX, clickY, numNodes: latestProjCoords.size });
+
     for (const [id, coord] of latestProjCoords.entries()) {
       const dx = clickX - coord.x;
       const dy = clickY - coord.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < coord.r + 15 && dist < closestDist) {
+      
+      console.log(`Checking Node [${id}]: dist=${dist.toFixed(1)}px, activeThreshold=${(coord.r + 30).toFixed(1)}px, pos=(${coord.x.toFixed(1)}, ${coord.y.toFixed(1)})`);
+
+      if (dist < coord.r + 30 && dist < closestDist) {
         clickedNodeId = id;
         closestDist = dist;
       }
     }
 
     if (clickedNodeId) {
+      console.log("3D NODE MATCHED AND DRAGGED:", clickedNodeId);
       draggedNodeId = clickedNodeId;
       isDragging = true;
       isDraggingCamera = false;
     } else {
+      console.log("3D CLICKS MISSED - ORBITING CAMERA...");
       draggedNodeId = null;
       isDragging = true;
       isDraggingCamera = true;
