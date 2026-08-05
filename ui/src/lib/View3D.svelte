@@ -26,8 +26,13 @@
   let angleY = $state(0.5); // Initial rotation around Y axis
 
   let isDragging = $state(false);
+  let isDraggingCamera = $state(false);
+  let draggedNodeId = $state<string | null>(null);
   let lastMouseX = 0;
   let lastMouseY = 0;
+
+  // Holds latest projected coordinates mapping for mouse picking/raycasting
+  const latestProjCoords = new Map<string, { x: number; y: number; r: number }>();
 
   // Sync 3D nodes when parseResult changes
   $effect(() => {
@@ -74,10 +79,39 @@
     }
   });
 
-  // Mouse interaction for rotation
+  // Mouse interaction for rotation & 3D node dragging
   function handleMouseDown(e: MouseEvent) {
     e.preventDefault();
-    isDragging = true;
+    if (!canvasElement) return;
+
+    const rect = canvasElement.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    // Pick 3D node closest to screen click coordinate
+    let clickedNodeId: string | null = null;
+    let closestDist = Infinity;
+
+    for (const [id, coord] of latestProjCoords.entries()) {
+      const dx = clickX - coord.x;
+      const dy = clickY - coord.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < coord.r + 15 && dist < closestDist) {
+        clickedNodeId = id;
+        closestDist = dist;
+      }
+    }
+
+    if (clickedNodeId) {
+      draggedNodeId = clickedNodeId;
+      isDragging = true;
+      isDraggingCamera = false;
+    } else {
+      draggedNodeId = null;
+      isDragging = true;
+      isDraggingCamera = true;
+    }
+
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
     window.addEventListener('mousemove', handleMouseMove);
@@ -89,8 +123,27 @@
     const dx = e.clientX - lastMouseX;
     const dy = e.clientY - lastMouseY;
 
-    angleY += dx * 0.007; // adjust rotation sensitivity
-    angleX += dy * 0.007;
+    if (isDraggingCamera) {
+      angleY += dx * 0.007; // adjust rotation sensitivity
+      angleX += dy * 0.007;
+    } else if (draggedNodeId) {
+      const node = nodes3D.get(draggedNodeId);
+      if (node) {
+        // Project 2D screen dragging delta (dx, dy) back into 3D relative to camera rotation angles!
+        const shiftX = dx * 0.6;
+        const shiftY = dy * 0.6;
+
+        node.x += Math.cos(angleY) * shiftX * 0.8;
+        node.z -= Math.sin(angleY) * shiftX * 0.8;
+        node.y += Math.cos(angleX) * shiftY * 0.8;
+        node.z += Math.sin(angleX) * shiftY * 0.8;
+
+        // Reset velocity so it follows mouse exactly
+        node.vx = 0;
+        node.vy = 0;
+        node.vz = 0;
+      }
+    }
 
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
@@ -98,6 +151,8 @@
 
   function handleMouseUp() {
     isDragging = false;
+    isDraggingCamera = false;
+    draggedNodeId = null;
     window.removeEventListener('mousemove', handleMouseMove);
     window.removeEventListener('mouseup', handleMouseUp);
   }
@@ -169,12 +224,16 @@
           const fy = (dy / dist) * force;
           const fz = (dz / dist) * force;
 
-          n1.vx -= fx;
-          n1.vy -= fy;
-          n1.vz -= fz;
-          n2.vx += fx;
-          n2.vy += fy;
-          n2.vz += fz;
+          if (n1.id !== draggedNodeId) {
+            n1.vx -= fx;
+            n1.vy -= fy;
+            n1.vz -= fz;
+          }
+          if (n2.id !== draggedNodeId) {
+            n2.vx += fx;
+            n2.vy += fy;
+            n2.vz += fz;
+          }
         }
       }
     }
@@ -197,12 +256,16 @@
           const fy = (dy / dist) * force;
           const fz = (dz / dist) * force;
 
-          n1.vx += fx;
-          n1.vy += fy;
-          n1.vz += fz;
-          n2.vx -= fx;
-          n2.vy -= fy;
-          n2.vz -= fz;
+          if (n1.id !== draggedNodeId) {
+            n1.vx += fx;
+            n1.vy += fy;
+            n1.vz += fz;
+          }
+          if (n2.id !== draggedNodeId) {
+            n2.vx -= fx;
+            n2.vy -= fy;
+            n2.vz -= fz;
+          }
         }
       });
 
@@ -244,18 +307,50 @@
               const fy = (dy / dist) * force;
               const fz = (dz / dist) * force;
 
-              node.vx += fx;
-              node.vy += fy;
-              node.vz += fz;
+              if (node.id !== draggedNodeId) {
+                node.vx += fx;
+                node.vy += fy;
+                node.vz += fz;
+              }
 
               // Symmetrically push the edge endpoints away from the node!
-              n1.vx -= fx * (1 - t) * 0.5;
-              n1.vy -= fy * (1 - t) * 0.5;
-              n1.vz -= fz * (1 - t) * 0.5;
+              if (n1.id !== draggedNodeId) {
+                n1.vx -= fx * (1 - t) * 0.5;
+                n1.vy -= fy * (1 - t) * 0.5;
+                n1.vz -= fz * (1 - t) * 0.5;
+              }
 
-              n2.vx -= fx * t * 0.5;
-              n2.vy -= fy * t * 0.5;
-              n2.vz -= fz * t * 0.5;
+              if (n2.id !== draggedNodeId) {
+                n2.vx -= fx * t * 0.5;
+                n2.vy -= fy * t * 0.5;
+                n2.vz -= fz * t * 0.5;
+              }
+            }
+          });
+        }
+      });
+
+      // 2.7 Coplanar Membrane Force (makes hyper-edges / membranes settle onto flat parallel planes)
+      workspaceState.parseResult.membranes.forEach(mem => {
+        // Find centroid of the membrane
+        let cz = 0;
+        let count = 0;
+        const memNodes: Node3D[] = [];
+        mem.nodeIds.forEach(id => {
+          const n = nodes3D.get(id);
+          if (n) {
+            cz += n.z;
+            memNodes.push(n);
+            count++;
+          }
+        });
+
+        if (count > 0) {
+          cz /= count;
+          // Apply a gentle force pulling nodes to have the same Z coordinate (flattening onto their centroid plane)
+          memNodes.forEach(n => {
+            if (n.id !== draggedNodeId) {
+              n.vz += (cz - n.z) * 0.05; // gentle coplanar flattening pull
             }
           });
         }
@@ -264,20 +359,22 @@
 
     // 3. Central gravity and integration
     nodes.forEach(n => {
-      // Gravity pulls to center (0,0,0)
-      n.vx -= n.x * kGravity;
-      n.vy -= n.y * kGravity;
-      n.vz -= n.z * kGravity;
+      if (n.id !== draggedNodeId) {
+        // Gravity pulls to center (0,0,0)
+        n.vx -= n.x * kGravity;
+        n.vy -= n.y * kGravity;
+        n.vz -= n.z * kGravity;
 
-      // Integrate
-      n.x += n.vx;
-      n.y += n.vy;
-      n.z += n.vz;
+        // Integrate
+        n.x += n.vx;
+        n.y += n.vy;
+        n.z += n.vz;
 
-      // Dampen velocity
-      n.vx *= kDamping;
-      n.vy *= kDamping;
-      n.vz *= kDamping;
+        // Dampen velocity
+        n.vx *= kDamping;
+        n.vy *= kDamping;
+        n.vz *= kDamping;
+      }
     });
   }
 
@@ -286,6 +383,9 @@
 
     const width = canvasElement.width / window.devicePixelRatio;
     const height = canvasElement.height / window.devicePixelRatio;
+
+    // Clear coordinates mapping for mouse picking
+    latestProjCoords.clear();
 
     // Clear background
     ctx.fillStyle = workspaceState.currentBgColor;
@@ -353,6 +453,9 @@
         color: node.color,
         origNode: node
       });
+
+      // Record projected coordinates for mouse-click picking
+      latestProjCoords.set(node.id, { x: projX, y: projY, r: projRadius });
     });
 
     // Sort by depth (Painter's Algorithm: further z is drawn first)
