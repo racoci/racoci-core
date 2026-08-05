@@ -29,6 +29,8 @@
   let isDraggingCamera = $state(false);
   let draggedNodeId = $state<string | null>(null);
   let hoveredNodeId = $state<string | null>(null);
+  let mouseCSSX = $state<number | null>(null);
+  let mouseCSSY = $state<number | null>(null);
   let lastMouseX = 0;
   let lastMouseY = 0;
 
@@ -172,10 +174,14 @@
 
   // Hover detection and cursor updates when NOT dragging
   function handleCanvasMouseMove(e: MouseEvent) {
-    if (isDragging) return;
-
     const clickX = e.offsetX;
     const clickY = e.offsetY;
+
+    // Track mouse CSS positions for debug raycasting
+    mouseCSSX = clickX;
+    mouseCSSY = clickY;
+
+    if (isDragging) return;
 
     let matchedId: string | null = null;
     let closestDist = Infinity;
@@ -201,8 +207,11 @@
     }
   }
 
+  // Mouse leave reset
   function handleCanvasMouseLeave() {
     hoveredNodeId = null;
+    mouseCSSX = null;
+    mouseCSSY = null;
     if (canvasElement) {
       canvasElement.style.cursor = 'default';
     }
@@ -220,11 +229,12 @@
       if (canvasElement && containerElement) {
         const w = containerElement.clientWidth;
         const h = containerElement.clientHeight;
-        canvasElement.width = w * window.devicePixelRatio;
-        canvasElement.height = h * window.devicePixelRatio;
+        
+        // Enforce 1:1 CSS pixel resolution to completely eliminate any high-DPI scaling offsets!
+        canvasElement.width = w;
+        canvasElement.height = h;
         canvasElement.style.width = `${w}px`;
         canvasElement.style.height = `${h}px`;
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
       }
     };
 
@@ -432,8 +442,8 @@
   function render3D(ctx: CanvasRenderingContext2D) {
     if (!canvasElement) return;
 
-    const width = canvasElement.width / window.devicePixelRatio;
-    const height = canvasElement.height / window.devicePixelRatio;
+    const width = canvasElement.width;
+    const height = canvasElement.height;
 
     // Clear coordinates mapping for mouse picking
     latestProjCoords.clear();
@@ -669,6 +679,61 @@
           ctx.restore();
         }
       });
+    }
+
+    // 5. Draw Debug Raycast Pointer Beam & Crosshair
+    if (mouseCSSX !== null && mouseCSSY !== null) {
+      ctx.save();
+      // Draw concentric circular target crosshair at mouse pointer
+      ctx.strokeStyle = '#ff007f'; // neon pink
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(mouseCSSX, mouseCSSY, 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(mouseCSSX, mouseCSSY, 12, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Crosshair lines
+      ctx.beginPath();
+      ctx.moveTo(mouseCSSX - 16, mouseCSSY); ctx.lineTo(mouseCSSX + 16, mouseCSSY);
+      ctx.moveTo(mouseCSSX, mouseCSSY - 16); ctx.lineTo(mouseCSSX, mouseCSSY + 16);
+      ctx.stroke();
+
+      // Find closest projected node to mouse
+      let closestNodeId: string | null = null;
+      let closestDist = Infinity;
+      let targetX = 0, targetY = 0;
+
+      for (const [id, coord] of latestProjCoords.entries()) {
+        const dx = mouseCSSX - coord.x;
+        const dy = mouseCSSY - coord.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestDist) {
+          closestNodeId = id;
+          closestDist = dist;
+          targetX = coord.x;
+          targetY = coord.y;
+        }
+      }
+
+      if (closestNodeId) {
+        // Draw a dashed vector ray line from mouse to target node's projected center!
+        ctx.strokeStyle = '#ff007f';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(mouseCSSX, mouseCSSY);
+        ctx.lineTo(targetX, targetY);
+        ctx.stroke();
+
+        // Print distance label
+        ctx.fillStyle = '#ff007f';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(`RAY TO [${closestNodeId}]: ${closestDist.toFixed(1)}px`, mouseCSSX + 20, mouseCSSY + 4);
+      }
+      ctx.restore();
     }
   }
 </script>
