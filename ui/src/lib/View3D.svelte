@@ -77,7 +77,16 @@
     isRemoved: boolean;
   }
 
+  // 3D coordinate state for physical edges (elastic string segments)
+  interface Edge3D {
+    id: string;
+    source: string;
+    target: string;
+    points: { x: number; y: number; z: number; vx: number; vy: number; vz: number; }[];
+  }
+
   let nodes3D = $state<Map<string, Node3D>>(new Map());
+  let edges3D = $state<Map<string, Edge3D>>(new Map());
   let angleX = $state(0.5); // Initial rotation around X axis
   let angleY = $state(0.5); // Initial rotation around Y axis
 
@@ -137,6 +146,53 @@
       }
 
       nodes3D = nextMap;
+    }
+  });
+
+  // Sync 3D physical edges when parseResult changes
+  $effect(() => {
+    if (workspaceState.parseResult) {
+      const nextMap = new Map<string, Edge3D>();
+      workspaceState.parseResult.edges.forEach(pe => {
+        const edgeKey = `${pe.source}-${pe.target}`;
+        const existing = edges3D.get(edgeKey);
+        
+        if (existing) {
+          nextMap.set(edgeKey, existing);
+        } else {
+          // Initialize intermediate 3D physical points (segments of the elastic string)
+          const sNode = nodes3D.get(pe.source);
+          const tNode = nodes3D.get(pe.target);
+          const points: Edge3D['points'] = [];
+          
+          if (sNode && tNode) {
+            const dx = tNode.x - sNode.x;
+            const dy = tNode.y - sNode.y;
+            const dz = tNode.z - sNode.z;
+            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+            const numPoints = Math.max(0, Math.floor(dist / 45) - 1); // segment every 45px in 3D
+            for (let i = 1; i <= numPoints; i++) {
+              const t = i / (numPoints + 1);
+              points.push({
+                x: sNode.x + dx * t,
+                y: sNode.y + dy * t,
+                z: sNode.z + dz * t,
+                vx: 0,
+                vy: 0,
+                vz: 0
+              });
+            }
+          }
+          
+          nextMap.set(edgeKey, {
+            id: pe.id,
+            source: pe.source,
+            target: pe.target,
+            points
+          });
+        }
+      });
+      edges3D = nextMap;
     }
   });
 
@@ -427,6 +483,85 @@
             n2.vy -= fy;
             n2.vz -= fz;
           }
+
+          // 2.2 Symmetrical Elastic-String Edge Physics (3D Intermediate Points Simulation)
+          const edgeKey = `${edge.source}-${edge.target}`;
+          const edge3d = edges3D.get(edgeKey);
+          if (edge3d && edge3d.points && edge3d.points.length > 0) {
+            const n = edge3d.points.length;
+            const segmentRestLen = 45; // target rest step size
+
+            // (A) Joint spring tension between consecutive 3D points
+            for (let k = 0; k <= n; k++) {
+              const ax = (k === 0) ? n1.x : edge3d.points[k - 1].x;
+              const ay = (k === 0) ? n1.y : edge3d.points[k - 1].y;
+              const az = (k === 0) ? n1.z : edge3d.points[k - 1].z;
+
+              const bx = (k === n) ? n2.x : edge3d.points[k].x;
+              const by = (k === n) ? n2.y : edge3d.points[k].y;
+              const bz = (k === n) ? n2.z : edge3d.points[k].z;
+
+              const jdx = bx - ax;
+              const jdy = by - ay;
+              const jdz = bz - az;
+              const jd = Math.sqrt(jdx * jdx + jdy * jdy + jdz * jdz) || 1;
+              const jforce = (jd - segmentRestLen) * 0.12; // elastic spring tension
+              const jfx = (jdx / jd) * jforce;
+              const jfy = (jdy / jd) * jforce;
+              const jfz = (jdz / jd) * jforce;
+
+              if (k > 0) {
+                edge3d.points[k - 1].vx += jfx;
+                edge3d.points[k - 1].vy += jfy;
+                edge3d.points[k - 1].vz += jfz;
+              } else if (n1.id !== draggedNodeId) {
+                n1.vx += jfx * 0.15;
+                n1.vy += jfy * 0.15;
+                n1.vz += jfz * 0.15;
+              }
+
+              if (k < n) {
+                edge3d.points[k].vx -= jfx;
+                edge3d.points[k].vy -= jfy;
+                edge3d.points[k].vz -= jfz;
+              } else if (n2.id !== draggedNodeId) {
+                n2.vx -= jfx * 0.15;
+                n2.vy -= jfy * 0.15;
+                n2.vz -= jfz * 0.15;
+              }
+            }
+
+            // (B) Obstacle avoidance repulsion on 3D intermediate points
+            edge3d.points.forEach(pt => {
+              nodes.forEach(node => {
+                if (node.isRemoved) return;
+                if (node.id === edge.source || node.id === edge.target) return;
+
+                const rdx = pt.x - node.x;
+                const rdy = pt.y - node.y;
+                const rdz = pt.z - node.z;
+                const rdist = Math.sqrt(rdx * rdx + rdy * rdy + rdz * rdz) || 1;
+                const avoidanceRadius = 80;
+
+                if (rdist < avoidanceRadius) {
+                  // lower intensity repulsion (less mass)
+                  const rforce = 150 / (rdist * rdist);
+                  pt.vx += (rdx / rdist) * rforce;
+                  pt.vy += (rdy / rdist) * rforce;
+                  pt.vz += (rdz / rdist) * rforce;
+                }
+              });
+
+              // (C) Apply velocity and damping in 3D
+              pt.vx *= kDamping;
+              pt.vy *= kDamping;
+              pt.vz *= kDamping;
+              
+              pt.x += pt.vx;
+              pt.y += pt.vy;
+              pt.z += pt.vz;
+            });
+          }
         }
       });
 
@@ -708,28 +843,84 @@
           const qx = (sx + tx) / 2 - Math.sin(angle) * bendAmount;
           const qy = (sy + ty) / 2 + Math.cos(angle) * bendAmount;
 
-          ctx.beginPath();
-          ctx.moveTo(sx, sy);
-          if (bendAmount > 0) {
-            ctx.quadraticCurveTo(qx, qy, tx, ty);
-          } else {
-            ctx.lineTo(tx, ty);
+          // Prepare projected intermediate 3D physical nodes
+          const edgeKey = `${edge.source}-${edge.target}`;
+          const edge3d = edges3D.get(edgeKey);
+          const pPoints: { x: number; y: number }[] = [];
+          
+          if (edge3d && edge3d.points && edge3d.points.length > 0) {
+            edge3d.points.forEach(pt => {
+              // 3D rotations based on drag angles
+              let px1 = pt.x * Math.cos(angleY) - pt.z * Math.sin(angleY);
+              let pz1 = pt.x * Math.sin(angleY) + pt.z * Math.cos(angleY);
+              let py2 = pt.y * Math.cos(angleX) - pz1 * Math.sin(angleX);
+              let pz2 = pt.y * Math.sin(angleX) + pz1 * Math.cos(angleX);
+
+              // Perspective divide
+              const pDepth = 1 / (distance + pz2);
+              const pProjX = px1 * scale * pDepth + width / 2;
+              const pProjY = py2 * scale * pDepth + height / 2;
+              pPoints.push({ x: pProjX, y: pProjY });
+            });
           }
 
-          ctx.strokeStyle = edge.color || '#3b82f6';
+          const finalEdgeColor = applyContrastProtection(workspaceState.currentBgColor, edge.color || '#ffffff');
+          ctx.strokeStyle = finalEdgeColor;
           ctx.globalAlpha = alpha * 0.65;
           ctx.lineWidth = Math.max(1.0, 2.5 * (distance / (distance + avgDepth)));
-          ctx.stroke();
 
-          // Draw wedge arrowhead precisely at the clipped target tip
+          let end_tx = cosA;
+          let end_ty = sinA;
+
+          if (pPoints.length > 0) {
+            // (A) Draw smooth physical spline passing through the intermediate 2D projected coordinates!
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            for (let k = 0; k < pPoints.length; k++) {
+              const pCur = pPoints[k];
+              const pNext = pPoints[k + 1] || { x: tx, y: ty };
+              const xc = (pCur.x + pNext.x) / 2;
+              const yc = (pCur.y + pNext.y) / 2;
+              ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
+            }
+            ctx.lineTo(tx, ty);
+            ctx.stroke();
+
+            // (B) Calculate precise final tangent at the target tip to align the arrowhead perfectly!
+            const lastPt = pPoints[pPoints.length - 1];
+            const tdx = tx - lastPt.x;
+            const tdy = ty - lastPt.y;
+            const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+            end_tx = tdx / tdist;
+            end_ty = tdy / tdist;
+          } else {
+            // Fallback: draw straight/quadratic line if no intermediate points are present
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            if (bendAmount > 0) {
+              ctx.quadraticCurveTo(qx, qy, tx, ty);
+              // Bezier tangent at end
+              const t_u = 1.0;
+              const dx_bend = 2 * (1 - t_u) * (qx - sx) + 2 * t_u * (tx - qx);
+              const dy_bend = 2 * (1 - t_u) * (qy - sy) + 2 * t_u * (ty - qy);
+              const dDist_bend = Math.sqrt(dx_bend * dx_bend + dy_bend * dy_bend) || 1;
+              end_tx = dx_bend / dDist_bend;
+              end_ty = dy_bend / dDist_bend;
+            } else {
+              ctx.lineTo(tx, ty);
+            }
+            ctx.stroke();
+          }
+
+          // Draw wedge arrowhead precisely at the clipped target tip aligned with final tangent
           ctx.save();
           ctx.globalAlpha = alpha * 0.8;
-          ctx.fillStyle = edge.color || '#3b82f6';
+          ctx.fillStyle = finalEdgeColor;
           
           // Arrowhead trigonometry
           const arrowSize = 8 * (distance / (distance + avgDepth));
           ctx.translate(tx, ty);
-          ctx.rotate(angle);
+          ctx.rotate(Math.atan2(end_ty, end_tx));
           ctx.beginPath();
           ctx.moveTo(0, 0);
           ctx.lineTo(-arrowSize * 1.5, -arrowSize * 0.5);

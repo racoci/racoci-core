@@ -33,6 +33,7 @@ interface VisualEdge {
   pulseOffset: number; // for flow animation
   color?: string;
   isNewTicks?: number;
+  points?: { x: number; y: number; vx: number; vy: number; }[];
 }
 
 interface VisualMembrane {
@@ -201,6 +202,27 @@ export class CanvasRenderer {
     // 2. Synchronize Edges
     this.edges = parsedEdges.map(pe => {
       const existing = this.edges.find(e => e.source === pe.source && e.target === pe.target);
+      const sNode = this.nodes.get(pe.source);
+      const tNode = this.nodes.get(pe.target);
+
+      let points = existing ? existing.points : undefined;
+      if (!points && sNode && tNode) {
+        points = [];
+        const dx = tNode.x - sNode.x;
+        const dy = tNode.y - sNode.y;
+        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+        const numPoints = Math.max(0, Math.floor(dist / 45) - 1); // segment every 45px
+        for (let i = 1; i <= numPoints; i++) {
+          const t = i / (numPoints + 1);
+          points.push({
+            x: sNode.x + dx * t,
+            y: sNode.y + dy * t,
+            vx: 0,
+            vy: 0
+          });
+        }
+      }
+
       return {
         id: pe.id,
         source: pe.source,
@@ -211,6 +233,7 @@ export class CanvasRenderer {
         isRemoved: pe.isRemoved || false,
         pulseOffset: existing ? existing.pulseOffset : Math.random(),
         color: pe.color ? getClosestAllowedColor(pe.color) : '#ffffff', // Default to white
+        points,
       };
     });
 
@@ -367,6 +390,75 @@ export class CanvasRenderer {
 
         applyForceToEntity(edge.source, fx, fy);
         applyForceToEntity(edge.target, -fx, -fy);
+
+        // 2.2 Symmetrical Elastic-String Edge Physics (Intermediate Points Simulation)
+        if (edge.points && edge.points.length > 0) {
+          const n = edge.points.length;
+          const segmentRestLen = 45; // target rest step size
+
+          // (A) joint spring tension between consecutive points
+          for (let k = 0; k <= n; k++) {
+            const ax = (k === 0) ? sCoord.x : edge.points[k - 1].x;
+            const ay = (k === 0) ? sCoord.y : edge.points[k - 1].y;
+            const bx = (k === n) ? tCoord.x : edge.points[k].x;
+            const by = (k === n) ? tCoord.y : edge.points[k].y;
+
+            const jdx = bx - ax;
+            const jdy = by - ay;
+            const jd = Math.sqrt(jdx * jdx + jdy * jdy) || 1;
+            const jforce = (jd - segmentRestLen) * 0.12; // elastic spring tension
+            const jfx = (jdx / jd) * jforce;
+            const jfy = (jdy / jd) * jforce;
+
+            if (k > 0) {
+              edge.points[k - 1].vx += jfx;
+              edge.points[k - 1].vy += jfy;
+            } else if (sNode && sNode.id !== this.draggedNodeId) {
+              sNode.vx += jfx * 0.15;
+              sNode.vy += jfy * 0.15;
+            }
+
+            if (k < n) {
+              edge.points[k].vx -= jfx;
+              edge.points[k].vy -= jfy;
+            } else if (tNode && tNode.id !== this.draggedNodeId) {
+              tNode.vx -= jfx * 0.15;
+              tNode.vy -= jfy * 0.15;
+            }
+          }
+
+          // (B) obstacle avoidance repulsion on intermediate points
+          edge.points.forEach(pt => {
+            nodesArr.forEach(node => {
+              if (node.isRemoved) return;
+              if (node.id === edge.source || node.id === node.id) { // skip endpoints
+                if (node.id === edge.source || node.id === edge.target) return;
+              }
+
+              const rdx = pt.x - node.x;
+              const rdy = pt.y - node.y;
+              const rdist = Math.sqrt(rdx * rdx + rdy * rdy) || 1;
+              const avoidanceRadius = 80;
+
+              if (rdist < avoidanceRadius) {
+                // lower intensity repulsion (less mass)
+                const rforce = 150 / (rdist * rdist);
+                pt.vx += (rdx / rdist) * rforce;
+                pt.vy += (rdy / rdist) * rforce;
+              }
+            });
+
+            // (C) apply velocity and damping
+            pt.vx *= kDamping;
+            pt.vy *= kDamping;
+            pt.x += pt.vx;
+            pt.y += pt.vy;
+
+            // clamp within canvas bounds
+            pt.x = Math.max(15, Math.min(width - 15, pt.x));
+            pt.y = Math.max(15, Math.min(height - 15, pt.y));
+          });
+        }
       }
     });
 
@@ -1049,37 +1141,97 @@ export class CanvasRenderer {
         strokeColor = applyContrastProtection(this.backgroundColor, '#ef4444');
       }
 
-      // 1. Draw the high-contrast sleek Bezier spine line
-      this.ctx.beginPath();
-      this.ctx.moveTo(sx, sy);
-      if (bendAmount > 0) {
-        this.ctx.quadraticCurveTo(qx, qy, tx, ty);
-      } else {
-        this.ctx.lineTo(tx, ty);
-      }
-      this.ctx.strokeStyle = strokeColor;
-
       // Symmetrical smooth line width tapering on spawning! Starts thicker and slims down smoothly.
       let baseLineWidth = isRemovedEdge ? 1.25 : 1.75;
       if (edge.isNew && edge.isNewTicks !== undefined) {
         const t = Math.min(1.0, edge.isNewTicks / 60);
-        baseLineWidth += 1.5 * (1 - t); // smoothly tapers from +1.5px down to +0px thickness
+        baseLineWidth += 1.5 * (1 - t);
       }
       this.ctx.lineWidth = baseLineWidth;
+      this.ctx.strokeStyle = strokeColor;
       if (isRemovedEdge) {
         this.ctx.setLineDash([4, 4]);
       } else {
         this.ctx.setLineDash([]);
       }
-      this.ctx.stroke();
 
-      // 2. Draw the elegant, sharp filled wedge arrowhead at the tip
-      const base_x = tx - tPt.tx * 11;
-      const base_y = ty - tPt.ty * 11;
-      const corner_left_x = base_x + tPt.nx * 5.0;
-      const corner_left_y = base_y + tPt.ny * 5.0;
-      const corner_right_x = base_x - tPt.nx * 5.0;
-      const corner_right_y = base_y - tPt.ny * 5.0;
+      // Define tangent vectors at the start and end of the spine for arrowhead rotation
+      let end_tx = Math.cos(angle);
+      let end_ty = Math.sin(angle);
+      let end_nx = -Math.sin(angle);
+      let end_ny = Math.cos(angle);
+
+      // Determine midpoint coordinates for label centering
+      let label_x = (sx + tx) / 2;
+      let label_y = (sy + ty) / 2;
+
+      if (edge.points && edge.points.length > 0) {
+        // (A) Draw smooth physical spline passing through the intermediate physical nodes!
+        this.ctx.beginPath();
+        this.ctx.moveTo(sx, sy);
+        for (let k = 0; k < edge.points.length; k++) {
+          const pCur = edge.points[k];
+          const pNext = edge.points[k + 1] || { x: tx, y: ty };
+          const xc = (pCur.x + pNext.x) / 2;
+          const yc = (pCur.y + pNext.y) / 2;
+          this.ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
+        }
+        this.ctx.lineTo(tx, ty);
+        this.ctx.stroke();
+
+        // (B) Calculate precise final tangent at the target tip to align the arrowhead perfectly!
+        const lastPt = edge.points[edge.points.length - 1];
+        const tdx = tx - lastPt.x;
+        const tdy = ty - lastPt.y;
+        const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+        end_tx = tdx / tdist;
+        end_ty = tdy / tdist;
+        end_nx = -end_ty;
+        end_ny = end_tx;
+
+        // Position the text label exactly at the middle physical node!
+        const midPt = edge.points[Math.floor(edge.points.length / 2)];
+        label_x = midPt.x;
+        label_y = midPt.y;
+      } else {
+        // Fallback: draw quadratic Bezier curve (only if no physical points are available)
+        this.ctx.beginPath();
+        this.ctx.moveTo(sx, sy);
+        if (bendAmount > 0) {
+          this.ctx.quadraticCurveTo(qx, qy, tx, ty);
+          
+          // Bezier tangent at end
+          const getSpinePoint = (u: number) => {
+            const clampedU = Math.max(0, Math.min(1, u));
+            const x = (1 - clampedU) ** 2 * sx + 2 * clampedU * (1 - clampedU) * qx + clampedU ** 2 * tx;
+            const y = (1 - clampedU) ** 2 * sy + 2 * clampedU * (1 - clampedU) * qy + clampedU ** 2 * ty;
+            const dx = 2 * (1 - clampedU) * (qx - sx) + 2 * clampedU * (tx - qx);
+            const dy = 2 * (1 - clampedU) * (qy - sy) + 2 * clampedU * (ty - qy);
+            const dDist = Math.sqrt(dx * dx + dy * dy) || 1;
+            return { x, y, tx: dx / dDist, ty: dy / dDist, nx: -dy / dDist, ny: dx / dDist };
+          };
+          const tPt = getSpinePoint(1.0);
+          end_tx = tPt.tx;
+          end_ty = tPt.ty;
+          end_nx = tPt.nx;
+          end_ny = tPt.ny;
+
+          const mPt = getSpinePoint(0.5);
+          label_x = mPt.x;
+          label_y = mPt.y;
+        } else {
+          this.ctx.lineTo(tx, ty);
+        }
+        this.ctx.stroke();
+      }
+
+      // 2. Draw the elegant, sharp filled wedge arrowhead at the tip aligned perfectly with the incoming tangent!
+      const base_x = tx - end_tx * 11;
+      const base_y = ty - end_ty * 11;
+      const corner_left_x = base_x + end_nx * 5.0;
+      const corner_left_y = base_y + end_ny * 5.0;
+      const corner_right_x = base_x - end_nx * 5.0;
+      const corner_right_y = base_y - end_ny * 5.0;
 
       this.ctx.beginPath();
       this.ctx.moveTo(tx, ty);
@@ -1091,11 +1243,31 @@ export class CanvasRenderer {
 
       this.ctx.restore();
 
-      // 3. Draw dynamic glowing flow pulse particles moving along the exact center line
+      // 3. Draw dynamic glowing flow pulse particles moving along the exact spline path
       if (!isRemovedEdge) {
         edge.pulseOffset = (edge.pulseOffset + 0.006) % 1.0;
         const u = edge.pulseOffset;
-        const pPt = getSpinePoint(u);
+
+        let p_x = sx, p_y = sy;
+        if (edge.points && edge.points.length > 0) {
+          const totalSegs = edge.points.length + 1;
+          const segIndex = Math.floor(u * totalSegs);
+          const segU = (u * totalSegs) % 1.0;
+          const pStart = (segIndex === 0) ? { x: sx, y: sy } : edge.points[segIndex - 1];
+          const pEnd = (segIndex === totalSegs - 1) ? { x: tx, y: ty } : edge.points[segIndex];
+          p_x = pStart.x + (pEnd.x - pStart.x) * segU;
+          p_y = pStart.y + (pEnd.y - pStart.y) * segU;
+        } else {
+          const getSpinePoint = (uVal: number) => {
+            const clampedU = Math.max(0, Math.min(1, uVal));
+            const x = (1 - clampedU) ** 2 * sx + 2 * clampedU * (1 - clampedU) * qx + clampedU ** 2 * tx;
+            const y = (1 - clampedU) ** 2 * sy + 2 * clampedU * (1 - clampedU) * qy + clampedU ** 2 * ty;
+            return { x, y };
+          };
+          const pPt = getSpinePoint(u);
+          p_x = pPt.x;
+          p_y = pPt.y;
+        }
 
         const pulseColor = strokeColor === '#ffffff' ? '#00f6ff' : strokeColor;
         this.ctx.fillStyle = pulseColor;
@@ -1103,13 +1275,14 @@ export class CanvasRenderer {
         this.ctx.shadowColor = pulseColor;
         this.ctx.shadowBlur = 8;
         this.ctx.beginPath();
-        this.ctx.arc(pPt.x, pPt.y, 3.5, 0, Math.PI * 2);
+        this.ctx.arc(p_x, p_y, 3.5, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.restore();
       }
 
       // 4. Draw the Text Name centered inside a clean background mask capsule
-      let textAngle = Math.atan2(mPt.ty, mPt.tx);
+      // Calculate tangent angle of text centering
+      let textAngle = Math.atan2(end_ty, end_tx);
       if (textAngle < -Math.PI) textAngle += Math.PI * 2;
       if (textAngle > Math.PI) textAngle -= Math.PI * 2;
       if (textAngle > Math.PI / 2 || textAngle < -Math.PI / 2) {
@@ -1117,7 +1290,7 @@ export class CanvasRenderer {
       }
 
       this.ctx.save();
-      this.ctx.translate(mPt.x, mPt.y);
+      this.ctx.translate(label_x, label_y);
       this.ctx.rotate(textAngle);
 
       this.ctx.font = 'bold 9px monospace';
