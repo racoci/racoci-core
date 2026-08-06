@@ -396,15 +396,18 @@ export class CanvasRenderer {
 
         // 2.2 Symmetrical Elastic-String Edge Physics (Intermediate Points Simulation)
         if (edge.points && edge.points.length > 0) {
-          const n = edge.points.length;
           const segmentRestLen = 45; // target rest step size
 
           // (A) Joint spring tension between consecutive points
-          for (let k = 0; k <= n; k++) {
-            const ax = (k === 0) ? sCoord.x : edge.points[k - 1].x;
-            const ay = (k === 0) ? sCoord.y : edge.points[k - 1].y;
-            const bx = (k === n) ? tCoord.x : edge.points[k].x;
-            const by = (k === n) ? tCoord.y : edge.points[k].y;
+          const n_initial = edge.points.length;
+          for (let k = 0; k <= n_initial; k++) {
+            const pt_prev = edge.points[k - 1];
+            const pt_curr = edge.points[k];
+
+            const ax = (k === 0) ? sCoord.x : (pt_prev ? pt_prev.x : sCoord.x);
+            const ay = (k === 0) ? sCoord.y : (pt_prev ? pt_prev.y : sCoord.y);
+            const bx = (k === n_initial) ? tCoord.x : (pt_curr ? pt_curr.x : tCoord.x);
+            const by = (k === n_initial) ? tCoord.y : (pt_curr ? pt_curr.y : tCoord.y);
 
             const jdx = bx - ax;
             const jdy = by - ay;
@@ -414,20 +417,20 @@ export class CanvasRenderer {
             const jfx = (jdx / jd) * jforce;
             const jfy = (jdy / jd) * jforce;
 
-            if (k > 0) {
+            if (k > 0 && pt_prev) {
               const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
-              edge.points[k - 1].vx += jfx / segMass;
-              edge.points[k - 1].vy += jfy / segMass;
+              pt_prev.vx += jfx / segMass;
+              pt_prev.vy += jfy / segMass;
             } else if (sNode && sNode.id !== this.draggedNodeId) {
               const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
               sNode.vx += (jfx * 0.15) / atomMass;
               sNode.vy += (jfy * 0.15) / atomMass;
             }
 
-            if (k < n) {
+            if (k < n_initial && pt_curr) {
               const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
-              edge.points[k].vx -= jfx / segMass;
-              edge.points[k].vy -= jfy / segMass;
+              pt_curr.vx -= jfx / segMass;
+              pt_curr.vy -= jfy / segMass;
             } else if (tNode && tNode.id !== this.draggedNodeId) {
               const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
               tNode.vx -= (jfx * 0.15) / atomMass;
@@ -466,16 +469,21 @@ export class CanvasRenderer {
           }
 
           // (C) Strain-adaptive decimation (prune intermediate points under low tension/strain)
+          const currentN = edge.points.length;
           let totalStrain = 0;
-          for (let k = 0; k <= n; k++) {
-            const ax = (k === 0) ? sCoord.x : edge.points[k - 1].x;
-            const ay = (k === 0) ? sCoord.y : edge.points[k - 1].y;
-            const bx = (k === n) ? tCoord.x : edge.points[k].x;
-            const by = (k === n) ? tCoord.y : edge.points[k].y;
+          for (let k = 0; k <= currentN; k++) {
+            const pt_prev = edge.points[k - 1];
+            const pt_curr = edge.points[k];
+
+            const ax = (k === 0) ? sCoord.x : (pt_prev ? pt_prev.x : sCoord.x);
+            const ay = (k === 0) ? sCoord.y : (pt_prev ? pt_prev.y : sCoord.y);
+            const bx = (k === currentN) ? tCoord.x : (pt_curr ? pt_curr.x : tCoord.x);
+            const by = (k === currentN) ? tCoord.y : (pt_curr ? pt_curr.y : tCoord.y);
+
             const d = Math.sqrt((bx - ax)**2 + (by - ay)**2) || 1;
             totalStrain += Math.abs(d - segmentRestLen);
           }
-          const avgStrain = totalStrain / (n + 1);
+          const avgStrain = totalStrain / (currentN + 1);
 
           if (avgStrain < 8.0) { // threshold of low strain (nearly relaxed/straight)
             if (edge.isNewTicks === undefined) edge.isNewTicks = 0;

@@ -492,18 +492,21 @@
           const edgeKey = `${edge.source}-${edge.target}`;
           const edge3d = edges3D.get(edgeKey);
           if (edge3d && edge3d.points && edge3d.points.length > 0) {
-            const n = edge3d.points.length;
             const segmentRestLen = 45; // target rest step size
 
             // (A) Joint spring tension between consecutive 3D points
-            for (let k = 0; k <= n; k++) {
-              const ax = (k === 0) ? n1.x : edge3d.points[k - 1].x;
-              const ay = (k === 0) ? n1.y : edge3d.points[k - 1].y;
-              const az = (k === 0) ? n1.z : edge3d.points[k - 1].z;
+            const n_initial = edge3d.points.length;
+            for (let k = 0; k <= n_initial; k++) {
+              const pt_prev = edge3d.points[k - 1];
+              const pt_curr = edge3d.points[k];
 
-              const bx = (k === n) ? n2.x : edge3d.points[k].x;
-              const by = (k === n) ? n2.y : edge3d.points[k].y;
-              const bz = (k === n) ? n2.z : edge3d.points[k].z;
+              const ax = (k === 0) ? n1.x : (pt_prev ? pt_prev.x : n1.x);
+              const ay = (k === 0) ? n1.y : (pt_prev ? pt_prev.y : n1.y);
+              const az = (k === 0) ? n1.z : (pt_prev ? pt_prev.z : n1.z);
+
+              const bx = (k === n_initial) ? n2.x : (pt_curr ? pt_curr.x : n2.x);
+              const by = (k === n_initial) ? n2.y : (pt_curr ? pt_curr.y : n2.y);
+              const bz = (k === n_initial) ? n2.z : (pt_curr ? pt_curr.z : n2.z);
 
               const jdx = bx - ax;
               const jdy = by - ay;
@@ -514,11 +517,11 @@
               const jfy = (jdy / jd) * jforce;
               const jfz = (jdz / jd) * jforce;
 
-              if (k > 0) {
+              if (k > 0 && pt_prev) {
                 const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-                edge3d.points[k - 1].vx += jfx / segMass;
-                edge3d.points[k - 1].vy += jfy / segMass;
-                edge3d.points[k - 1].vz += jfz / segMass;
+                pt_prev.vx += jfx / segMass;
+                pt_prev.vy += jfy / segMass;
+                pt_prev.vz += jfz / segMass;
               } else if (n1.id !== draggedNodeId) {
                 const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
                 n1.vx += (jfx * 0.15) / atomMass;
@@ -526,11 +529,11 @@
                 n1.vz += (jfz * 0.15) / atomMass;
               }
 
-              if (k < n) {
+              if (k < n_initial && pt_curr) {
                 const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-                edge3d.points[k].vx -= jfx / segMass;
-                edge3d.points[k].vy -= jfy / segMass;
-                edge3d.points[k].vz -= jfz / segMass;
+                pt_curr.vx -= jfx / segMass;
+                pt_curr.vy -= jfy / segMass;
+                pt_curr.vz -= jfz / segMass;
               } else if (n2.id !== draggedNodeId) {
                 const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
                 n2.vx -= (jfx * 0.15) / atomMass;
@@ -570,20 +573,24 @@
             }
 
             // (C) Strain-adaptive decimation (prune intermediate points under low tension/strain in 3D)
+            const currentN = edge3d.points.length;
             let totalStrain = 0;
-            for (let k = 0; k <= n; k++) {
-              const ax = (k === 0) ? n1.x : edge3d.points[k - 1].x;
-              const ay = (k === 0) ? n1.y : edge3d.points[k - 1].y;
-              const az = (k === 0) ? n1.z : edge3d.points[k - 1].z;
+            for (let k = 0; k <= currentN; k++) {
+              const pt_prev = edge3d.points[k - 1];
+              const pt_curr = edge3d.points[k];
 
-              const bx = (k === n) ? n2.x : edge3d.points[k].x;
-              const by = (k === n) ? n2.y : edge3d.points[k].y;
-              const bz = (k === n) ? n2.z : edge3d.points[k].z;
+              const ax = (k === 0) ? n1.x : (pt_prev ? pt_prev.x : n1.x);
+              const ay = (k === 0) ? n1.y : (pt_prev ? pt_prev.y : n1.y);
+              const az = (k === 0) ? n1.z : (pt_prev ? pt_prev.z : n1.z);
+
+              const bx = (k === currentN) ? n2.x : (pt_curr ? pt_curr.x : n2.x);
+              const by = (k === currentN) ? n2.y : (pt_curr ? pt_curr.y : n2.y);
+              const bz = (k === currentN) ? n2.z : (pt_curr ? pt_curr.z : n2.z);
 
               const d = Math.sqrt((bx - ax)**2 + (by - ay)**2 + (bz - az)**2) || 1;
               totalStrain += Math.abs(d - segmentRestLen);
             }
-            const avgStrain = totalStrain / (n + 1);
+            const avgStrain = totalStrain / (currentN + 1);
 
             if (avgStrain < 8.0) { // threshold of low strain (nearly relaxed/straight)
               if (edge.isNewTicks === undefined) edge.isNewTicks = 0;
