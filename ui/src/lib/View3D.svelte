@@ -142,13 +142,15 @@
       const node = nodes3D.get(draggedNodeId);
       if (node) {
         // Project 2D screen dragging delta (dx, dy) back into 3D relative to camera rotation angles!
-        const shiftX = dx * 0.6;
-        const shiftY = dy * 0.6;
+        // We use the exact perspective projection scale formula to map screen pixels to 3D units 1:1!
+        const factor = (300 + node.z) / 260;
+        const shiftX = dx * factor;
+        const shiftY = dy * factor;
 
-        node.x += Math.cos(angleY) * shiftX * 0.8;
-        node.z -= Math.sin(angleY) * shiftX * 0.8;
-        node.y += Math.cos(angleX) * shiftY * 0.8;
-        node.z += Math.sin(angleX) * shiftY * 0.8;
+        node.x += Math.cos(angleY) * shiftX;
+        node.z -= Math.sin(angleY) * shiftX;
+        node.y += Math.cos(angleX) * shiftY;
+        node.z += Math.sin(angleX) * shiftY;
 
         // Reset velocity so it follows mouse exactly
         node.vx = 0;
