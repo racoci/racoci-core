@@ -87,9 +87,10 @@
     e.preventDefault();
     if (!canvasElement) return;
 
-    // Use unscaled e.offsetX and offsetY for 100% zoom and scroll-independent picking!
-    const clickX = e.offsetX;
-    const clickY = e.offsetY;
+    // Use highly precise proportional coordinate mapping (neutralizes browser zoom, borders, and flexbox stretches)
+    const rect = canvasElement.getBoundingClientRect();
+    const clickX = ((e.clientX - rect.left) / rect.width) * canvasElement.width;
+    const clickY = ((e.clientY - rect.top) / rect.height) * canvasElement.height;
 
     // Pick 3D node closest to screen click coordinate
     let clickedNodeId: string | null = null;
@@ -141,10 +142,10 @@
     } else if (draggedNodeId && canvasElement) {
       const node = nodes3D.get(draggedNodeId);
       if (node) {
-        // Calculate exact raw CSS mouse coordinates inside the canvas
+        // Calculate exact proportional mouse coordinates inside the canvas
         const rect = canvasElement.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
+        const clickX = ((e.clientX - rect.left) / rect.width) * canvasElement.width;
+        const clickY = ((e.clientY - rect.top) / rect.height) * canvasElement.height;
 
         // 1. Get the current rotated Z coordinate (z2) of the node to maintain dragging depth
         const x1_old = node.x * Math.cos(angleY) - node.z * Math.sin(angleY);
@@ -196,8 +197,11 @@
 
   // Hover detection and cursor updates when NOT dragging
   function handleCanvasMouseMove(e: MouseEvent) {
-    const clickX = e.offsetX;
-    const clickY = e.offsetY;
+    if (!canvasElement) return;
+
+    const rect = canvasElement.getBoundingClientRect();
+    const clickX = ((e.clientX - rect.left) / rect.width) * canvasElement.width;
+    const clickY = ((e.clientY - rect.top) / rect.height) * canvasElement.height;
 
     // Track mouse CSS positions for debug raycasting
     mouseCSSX = clickX;
