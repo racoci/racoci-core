@@ -2,9 +2,65 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { workspaceState } from './workspaceState.svelte.js';
+  import { applyContrastProtection, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from './ColorMath.js';
 
   let canvasElement = $state<HTMLCanvasElement | null>(null);
   let containerElement = $state<HTMLDivElement | null>(null);
+
+  // Math Helper: Get Gradient Shades
+  function getGradientShades(baseColor: string, bgL: number): { start: string; end: string } {
+    const rgb = hexToRgb(baseColor);
+    const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+    
+    if (bgL >= 0.5) {
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.95);
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.88);
+      return {
+        start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
+        end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
+      };
+    } else {
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.08);
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.16);
+      return {
+        start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
+        end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
+      };
+    }
+  }
+
+  // Math Helper: Andrew's Monotone Chain Convex Hull Algorithm for 3D Membrane Shapes
+  interface Point { x: number; y: number }
+
+  function getConvexHull(points: Point[]): Point[] {
+    if (points.length <= 3) return points;
+    const sorted = [...points].sort((a, b) => a.x !== b.x ? a.x - b.x : a.y - b.y);
+
+    const lower: Point[] = [];
+    for (const p of sorted) {
+      while (lower.length >= 2 && crossProduct(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+        lower.pop();
+      }
+      lower.push(p);
+    }
+
+    const upper: Point[] = [];
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const p = sorted[i];
+      while (upper.length >= 2 && crossProduct(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+        upper.pop();
+      }
+      upper.push(p);
+    }
+
+    lower.pop();
+    upper.pop();
+    return lower.concat(upper);
+  }
+
+  function crossProduct(o: Point, a: Point, b: Point): number {
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  }
 
   // 3D coordinate state for parsed nodes
   interface Node3D {
@@ -593,7 +649,7 @@
     ctx.beginPath(); ctx.moveTo(axX, axY); ctx.lineTo(axX + zAx.rx, axY + zAx.ry); ctx.stroke();
     ctx.restore();
 
-    // 2. Draw Edges
+    // 2. Draw Edges (3D Perspective Bezier Curves)
     if (workspaceState.parseResult) {
       ctx.save();
       workspaceState.parseResult.edges.forEach(edge => {
@@ -605,120 +661,219 @@
           const avgDepth = (sourceProj.rotZ + targetProj.rotZ) / 2;
           const alpha = Math.max(0.1, Math.min(1.0, 1 - (avgDepth + 150) / 300));
 
+          const sx = sourceProj.projX;
+          const sy = sourceProj.projY;
+          const tx = targetProj.projX;
+          const ty = targetProj.projY;
+
+          const dx = tx - sx;
+          const dy = ty - sy;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const angle = Math.atan2(dy, dx);
+
+          // Quadratic Bezier control point for 3D curved line
+          const bendAmount = Math.max(0, 120 - dist) * 0.4;
+          const qx = (sx + tx) / 2 - Math.sin(angle) * bendAmount;
+          const qy = (sy + ty) / 2 + Math.cos(angle) * bendAmount;
+
           ctx.beginPath();
-          ctx.moveTo(sourceProj.projX, sourceProj.projY);
-          ctx.lineTo(targetProj.projX, targetProj.projY);
+          ctx.moveTo(sx, sy);
+          if (bendAmount > 0) {
+            ctx.quadraticCurveTo(qx, qy, tx, ty);
+          } else {
+            ctx.lineTo(tx, ty);
+          }
 
           ctx.strokeStyle = edge.color || '#3b82f6';
-          ctx.globalAlpha = alpha * 0.7;
-          ctx.lineWidth = Math.max(0.5, 3 * (distance / (distance + avgDepth)));
+          ctx.globalAlpha = alpha * 0.65;
+          ctx.lineWidth = Math.max(1.0, 2.5 * (distance / (distance + avgDepth)));
           ctx.stroke();
+
+          // Draw wedge arrowhead
+          ctx.save();
+          ctx.globalAlpha = alpha * 0.8;
+          ctx.fillStyle = edge.color || '#3b82f6';
+          
+          // Arrowhead trigonometry
+          const arrowSize = 8 * (distance / (distance + avgDepth));
+          ctx.translate(tx, ty);
+          ctx.rotate(angle);
+          ctx.beginPath();
+          ctx.moveTo(0, 0);
+          ctx.lineTo(-arrowSize * 1.5, -arrowSize * 0.5);
+          ctx.lineTo(-arrowSize * 1.5, arrowSize * 0.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
         }
       });
       ctx.restore();
     }
 
-    // 3. Draw Nodes (spherical shading based on painter sorting)
+    // 3. Draw Nodes (Rounded Rectangular Billboards with Emissive Glow)
     projectedNodes.forEach(pn => {
       const isHovered = pn.id === hoveredNodeId;
       const isDragged = pn.id === draggedNodeId;
       const alpha = Math.max(0.15, Math.min(1.0, 1 - (pn.rotZ + 150) / 300));
+      
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      // Draw a glowing halo aura if hovered or dragged
-      if (isHovered || isDragged) {
-        ctx.save();
-        ctx.shadowColor = '#66fcf1';
-        ctx.shadowBlur = 15;
-        ctx.strokeStyle = '#66fcf1';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(pn.projX, pn.projY, pn.projRadius + 4, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
+      const baseColor = pn.color || '#ffffff';
+      const borderCol = applyContrastProtection(workspaceState.currentBgColor, baseColor);
+      
+      // Calculate background gradient shades for 3D boxes
+      const shades = getGradientShades(baseColor, 0.1); // assume dark background
+      const bgGradStart = shades.start;
+      const bgGradEnd = shades.end;
 
-      // 3D Spherical Shading with radial gradient
-      const gradient = ctx.createRadialGradient(
-        pn.projX - pn.projRadius * 0.3,
-        pn.projY - pn.projRadius * 0.3,
-        pn.projRadius * 0.1,
-        pn.projX,
-        pn.projY,
-        pn.projRadius
-      );
+      // Calculate dynamic rounded-square bounds scaled with depth!
+      const depthScale = distance / (distance + pn.rotZ);
+      
+      ctx.font = 'bold 9px monospace';
+      const textWidth = ctx.measureText(pn.label).width;
+      
+      const w = Math.max(50, textWidth + 16) * depthScale;
+      const h = 22 * depthScale;
 
-      gradient.addColorStop(0, '#ffffff');
-      gradient.addColorStop(0.2, pn.color);
-      gradient.addColorStop(1, '#05070a');
+      // Draw shadow glow matching the node's color!
+      ctx.shadowColor = borderCol;
+      ctx.shadowBlur = (isHovered || isDragged) ? 22 : 10;
 
-      ctx.fillStyle = gradient;
+      // Draw background rounded rect
+      const grad = ctx.createLinearGradient(pn.projX, pn.projY - h / 2, pn.projX, pn.projY + h / 2);
+      grad.addColorStop(0, bgGradStart);
+      grad.addColorStop(1, bgGradEnd);
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = borderCol;
+      ctx.lineWidth = isHovered ? 2.0 : 1.0;
+
       ctx.beginPath();
-      ctx.arc(pn.projX, pn.projY, pn.projRadius, 0, Math.PI * 2);
+      // Custom rounded rect implementation inside render3D
+      const rx = pn.projX - w / 2;
+      const ry = pn.projY - h / 2;
+      const radius = Math.min(6, w / 4);
+      
+      ctx.moveTo(rx + radius, ry);
+      ctx.lineTo(rx + w - radius, ry);
+      ctx.quadraticCurveTo(rx + w, ry, rx + w, ry + radius);
+      ctx.lineTo(rx + w, ry + h - radius);
+      ctx.quadraticCurveTo(rx + w, ry + h, rx + w - radius, ry + h);
+      ctx.lineTo(rx + radius, ry + h);
+      ctx.quadraticCurveTo(rx, ry + h, rx, ry + h - radius);
+      ctx.lineTo(rx, ry + radius);
+      ctx.quadraticCurveTo(rx, ry, rx + radius, ry);
+      ctx.closePath();
+      
       ctx.fill();
-
-      // Thin outer outline
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-      ctx.lineWidth = 0.5;
       ctx.stroke();
 
-      // Node label
+      // Reset shadows before drawing text to keep text extremely sharp!
+      ctx.shadowBlur = 0;
+
+      // Draw text nicely inside the box
       ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 8px "Fira Code", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(pn.label, pn.projX, pn.projY + pn.projRadius + 10);
+      ctx.textBaseline = 'middle';
+      ctx.font = `bold ${Math.max(7, Math.round(9 * depthScale))}px monospace`;
+      ctx.fillText(pn.label, pn.projX, pn.projY);
+
       ctx.restore();
     });
 
-    // 4. Draw Membranes as rotating circular orbit rings/halos
+    // 4. Draw Membranes as Thick Rounded 3D Polygons (Convex Hull)
     if (workspaceState.parseResult) {
       workspaceState.parseResult.membranes.forEach(mem => {
-        // Find center of membrane in 3D by averaging coordinates
-        let cx = 0, cy = 0, cz = 0;
-        let count = 0;
-        mem.nodeIds.forEach(id => {
-          const n = nodes3D.get(id);
-          if (n) {
-            cx += n.x; cy += n.y; cz += n.z;
-            count++;
+        // Find projected coordinates of all active nodes in this membrane
+        const activeProjNodes = mem.nodeIds
+          .map(id => projMap.get(id))
+          .filter((pn): pn is ProjectedNode => !!pn);
+
+        if (activeProjNodes.length === 0) return;
+
+        // Collect node centers
+        const points = activeProjNodes.map(pn => ({ x: pn.projX, y: pn.projY }));
+
+        // Add padding boundaries around each node to make the hull smooth and generous!
+        let boundaryPoints: Point[] = [];
+        activeProjNodes.forEach(pn => {
+          const padding = 12 * (distance / (distance + pn.rotZ));
+          for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+            boundaryPoints.push({
+              x: pn.projX + Math.cos(angle) * padding,
+              y: pn.projY + Math.sin(angle) * padding,
+            });
           }
         });
 
-        if (count > 0) {
-          cx /= count; cy /= count; cz /= count;
+        const hull = getConvexHull(boundaryPoints);
+        if (hull.length < 3) return;
 
-          // Rotate center
-          let x1 = cx * Math.cos(angleY) - cz * Math.sin(angleY);
-          let z1 = cx * Math.sin(angleY) + cz * Math.cos(angleY);
-          let y2 = cy * Math.cos(angleX) - z1 * Math.sin(angleX);
-          let z2 = cy * Math.sin(angleX) + z1 * Math.cos(angleX);
+        // Calculate average depth for depth-fade
+        let sumZ = 0;
+        activeProjNodes.forEach(pn => sumZ += pn.rotZ);
+        const avgZ = sumZ / activeProjNodes.length;
+        const alpha = Math.max(0.1, Math.min(1.0, 1 - (avgZ + 150) / 250));
 
-          const depth = 1 / (distance + z2);
-          const projCX = x1 * scale * depth + width / 2;
-          const projCY = y2 * scale * depth + height / 2;
-          const radius = 60 * scale * depth; // standard membrane size
+        // Get membrane custom/assigned color (defaulting to white)
+        const baseMembColor = mem.color || '#ffffff';
+        const finalMembColor = applyContrastProtection(workspaceState.currentBgColor, baseMembColor);
+        const rgb = hexToRgb(finalMembColor);
 
-          // Draw membrane orbit ring
-          ctx.save();
-          ctx.globalAlpha = Math.max(0.1, Math.min(1.0, 1 - (z2 + 100) / 250)) * 0.25;
-          ctx.strokeStyle = mem.color || '#a855f7';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
-          
-          // Draw dashed rotating oval membrane
-          ctx.beginPath();
-          ctx.ellipse(projCX, projCY, radius * 1.3, radius * 0.7, angleY * 0.5, 0, Math.PI * 2);
-          ctx.stroke();
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.45;
 
-          // Render central translucent halo
-          ctx.fillStyle = mem.color || '#a855f7';
-          ctx.globalAlpha *= 0.12;
-          ctx.beginPath();
-          ctx.ellipse(projCX, projCY, radius * 1.3, radius * 0.7, angleY * 0.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
+        // Draw Thick Extruded 3D Depth Layer (Offset shadow)
+        ctx.strokeStyle = `rgba(${Math.round(rgb.r * 0.4)}, ${Math.round(rgb.g * 0.4)}, ${Math.round(rgb.b * 0.4)}, 0.4)`;
+        ctx.lineWidth = 14 * (distance / (distance + avgZ));
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        // Shift offset slightly downward to simulate extrusion depth
+        const offsetShift = 4 * (distance / (distance + avgZ));
+        ctx.moveTo(hull[0].x, hull[0].y + offsetShift);
+        for (let k = 1; k < hull.length; k++) {
+          ctx.lineTo(hull[k].x, hull[k].y + offsetShift);
         }
+        ctx.closePath();
+        ctx.stroke();
+
+        // Draw Main Top Layer with thick rounded contour
+        ctx.strokeStyle = finalMembColor;
+        ctx.lineWidth = 10 * (distance / (distance + avgZ));
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = finalMembColor;
+        ctx.shadowBlur = 15;
+
+        const gradColorStart = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.22)`;
+        const gradColorEnd = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.02)`;
+
+        // Calculate centroid of the hull for radial gradient
+        let hSumX = 0, hSumY = 0;
+        hull.forEach(p => { hSumX += p.x; hSumY += p.y; });
+        const hcx = hSumX / hull.length;
+        const hcy = hSumY / hull.length;
+
+        let hMaxDist = 1;
+        hull.forEach(p => {
+          const d = Math.sqrt((p.x - hcx) * (p.x - hcx) + (p.y - hcy) * (p.y - hcy));
+          if (d > hMaxDist) hMaxDist = d;
+        });
+
+        const grad = ctx.createRadialGradient(hcx, hcy, 0, hcx, hcy, hMaxDist);
+        grad.addColorStop(0, gradColorStart);
+        grad.addColorStop(1, gradColorEnd);
+        ctx.fillStyle = grad;
+
+        ctx.beginPath();
+        ctx.moveTo(hull[0].x, hull[0].y);
+        for (let k = 1; k < hull.length; k++) {
+          ctx.lineTo(hull[k].x, hull[k].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
       });
     }
 
@@ -819,7 +974,12 @@
 
   <div class="view3d-overlay">
     <span class="overlay-badge">Perspective 3D</span>
-    <span class="overlay-text">Mouse Drag to Rotate</span>
+    {#if workspaceState.parseResult}
+      <span class="overlay-text text-yellow">NODES: {nodes3D.size}</span>
+      <span class="overlay-text text-cyan">EDGES: {workspaceState.parseResult.edges.length}</span>
+      <span class="overlay-text text-purple">MEMBRANES: {workspaceState.parseResult.membranes.length}</span>
+    {/if}
+    <span class="overlay-text">Drag mouse to rotate</span>
   </div>
 </div>
 
@@ -870,6 +1030,10 @@
     font-size: 8px;
     color: #45a29e;
   }
+
+  .overlay-text.text-yellow { color: #facc15; font-weight: bold; }
+  .overlay-text.text-cyan { color: #66fcf1; font-weight: bold; }
+  .overlay-text.text-purple { color: #c084fc; font-weight: bold; }
 
   /* Cybernetic Floating Zoom Controls */
   .zoom-controls {
