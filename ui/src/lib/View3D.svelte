@@ -707,20 +707,18 @@
       });
     }
 
-    // 5. Draw Debug Raycast Pointer Beam & Crosshair (3D perspective intersections)
+    // 5. Draw Debug Raycast Pointer Beam (uncluttered semi-reta / segment)
     if (mouseCSSX !== null && mouseCSSY !== null) {
       ctx.save();
 
       const Mx = mouseCSSX - width / 2;
       const My = mouseCSSY - height / 2;
       const scale = 260;
-      const distance = 300;
       const D_lenSq = Mx * Mx + My * My + scale * scale;
 
       // Find first node sphere intersection in 3D
       let intersectedNodeId: string | null = null;
       let firstIntersectionT = Infinity;
-      let intersectX = 0, intersectY = 0, intersectZ = 0;
 
       nodes3D.forEach(node => {
         if (node.isRemoved) return;
@@ -754,76 +752,28 @@
             if (t_closest < firstIntersectionT) {
               firstIntersectionT = t_closest;
               intersectedNodeId = node.id;
-              intersectX = px;
-              intersectY = py;
-              intersectZ = pz;
             }
           }
         }
       });
 
-      // Draw mouse crosshair and 3D ray indicator
-      ctx.strokeStyle = '#ff007f'; // neon pink
-      ctx.lineWidth = 1;
-
-      // Draw pointer target crosshair
-      ctx.beginPath(); ctx.arc(mouseCSSX, mouseCSSY, 4, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.arc(mouseCSSX, mouseCSSY, 12, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(mouseCSSX - 16, mouseCSSY); ctx.lineTo(mouseCSSX + 16, mouseCSSY);
-      ctx.moveTo(mouseCSSX, mouseCSSY - 16); ctx.lineTo(mouseCSSX, mouseCSSY + 16);
-      ctx.stroke();
-
       if (intersectedNodeId) {
-        // Find projected coordinate of closest node
         const pNode = projMap.get(intersectedNodeId);
         if (pNode) {
-          // Draw a glowing high-contrast concentric target halo directly around the intersected node!
-          ctx.strokeStyle = '#22c55e'; // neon green for hit!
+          // Draw a solid, clean neon-pink segment from the cursor directly to the target node
+          ctx.strokeStyle = '#ff007f'; 
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(pNode.projX, pNode.projY, pNode.projRadius + 6, 0, Math.PI * 2);
+          ctx.moveTo(mouseCSSX, mouseCSSY);
+          ctx.lineTo(pNode.projX, pNode.projY);
           ctx.stroke();
 
-          // Draw hit text label
-          ctx.fillStyle = '#22c55e';
-          ctx.font = 'bold 9px monospace';
-          ctx.fillText(`RAY INTERSECTED [${intersectedNodeId}] AT DEPTH Z: ${intersectZ.toFixed(1)}`, mouseCSSX + 20, mouseCSSY + 4);
-        }
-      } else {
-        // If no node is hit, show ground plane intersection (at Y_rotated = 120)
-        if (My > 0) {
-          const t_ground = 120 / My;
-          if (t_ground > 0) {
-            const gx_3d = t_ground * Mx;
-            const gy_3d = 120;
-            const gz_3d = -300 + t_ground * scale;
-
-            // Project ground intersection point back to screen
-            const depth = 1 / (distance + gz_3d);
-            const gx = gx_3d * scale * depth + width / 2;
-            const gy = gy_3d * scale * depth + height / 2;
-
-            // Draw a flat cybernetic ellipse resting on the ground grid representing the ray collision point!
-            ctx.strokeStyle = '#ff007f';
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.ellipse(gx, gy, 18 * scale * depth, 6 * scale * depth, 0, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // Draw outer secondary ripple
-            ctx.save();
-            ctx.globalAlpha = 0.4;
-            ctx.beginPath();
-            ctx.ellipse(gx, gy, 30 * scale * depth, 10 * scale * depth, 0, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.restore();
-
-            // Print ground intersection label
-            ctx.fillStyle = '#ff007f';
-            ctx.font = 'bold 9px monospace';
-            ctx.fillText(`RAY INTERSECTED GROUND AT: (${gx_3d.toFixed(0)}, 120, ${gz_3d.toFixed(0)})`, mouseCSSX + 20, mouseCSSY + 4);
-          }
+          // Green ring to indicate hit
+          ctx.strokeStyle = '#22c55e';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(pNode.projX, pNode.projY, pNode.projRadius + 4, 0, Math.PI * 2);
+          ctx.stroke();
         }
       }
 
