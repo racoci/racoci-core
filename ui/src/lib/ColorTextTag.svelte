@@ -15,6 +15,7 @@
   } = $props();
 
   let showPicker = $state(false);
+  let isHovered = $state(false);
 
   // Allowed vibrant palette
   const allowedPalette = [
@@ -56,19 +57,26 @@
   }
 </script>
 
-<span class="color-tag-wrapper">
+<span 
+  class="color-tag-wrapper"
+  onmouseenter={() => isHovered = true}
+  onmouseleave={() => isHovered = false}
+>
   <TextTag 
     {color} 
     bgColor={`${color}22`} 
     onclick={togglePicker}
   >
     <span class="hash-symbol">#</span>
+    {#if isHovered}
+      <span class="color-hex">{color.replace('#', '')}</span>
+    {/if}
   </TextTag>
 
   {#if showPicker}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="backdrop" on:click={closePicker}></div>
+    <div class="backdrop" onclick={closePicker}></div>
     <div class="picker-popup" style:--picker-bg={bgColor}>
       <div class="picker-header">SELECT TOPOLOGY COLOR</div>
       <div class="palette-grid">
@@ -80,7 +88,7 @@
             class:active={color.toLowerCase() === paletteColor.toLowerCase()}
             style:background-color={paletteColor}
             style:--opt-shadow={paletteColor}
-            on:click={(e) => selectColor(paletteColor, e)}
+            onclick={(e) => selectColor(paletteColor, e)}
             title={paletteColor}
           ></span>
         {/each}
@@ -182,5 +190,13 @@
     transform: scale(1.2);
     border-color: #ffffff;
     box-shadow: 0 0 8px var(--opt-shadow);
+  }
+
+  .color-hex {
+    font-size: 8px;
+    margin-left: 2px;
+    font-family: monospace;
+    display: inline-block;
+    vertical-align: middle;
   }
 </style>

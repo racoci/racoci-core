@@ -1,5 +1,5 @@
 import type { NodeData, EdgeData, MembraneData } from './HCypherParser.js';
-import { applyContrastProtection, getClosestAllowedColor, getRelativeLuminance, hexToRgb } from './ColorMath.js';
+import { applyContrastProtection, getClosestAllowedColor, getRelativeLuminance, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from './ColorMath.js';
 
 interface VisualNode {
   id: string;
@@ -1086,6 +1086,27 @@ export class CanvasRenderer {
       this.ctx.restore();
     });
   }
+  private getGradientShades(baseColor: string, bgL: number): { start: string; end: string } {
+    const rgb = hexToRgb(baseColor);
+    const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+    
+    if (bgL >= 0.5) {
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.95);
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.88);
+      return {
+        start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
+        end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
+      };
+    } else {
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.08);
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.16);
+      return {
+        start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
+        end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
+      };
+    }
+  }
+
   private drawNodes() {
     this.nodes.forEach(node => {
       if (node.alpha <= 0.05) return;
@@ -1114,12 +1135,18 @@ export class CanvasRenderer {
           bgGradEnd = bgL >= 0.5 ? '#bae6fd' : '#1e40af';
           this.ctx.strokeStyle = activeColor;
           this.ctx.shadowColor = activeColor;
-        } else if (node.isNew) {
+        } else if (node.isNew && baseColor === '#ffffff') {
           const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
           bgGradStart = bgL >= 0.5 ? '#dcfce7' : '#052e16';
           bgGradEnd = bgL >= 0.5 ? '#bbf7d0' : '#14532d';
           this.ctx.strokeStyle = finalNewColor;
           this.ctx.shadowColor = finalNewColor;
+        } else if (baseColor !== '#ffffff') {
+          const shades = this.getGradientShades(baseColor, bgL);
+          bgGradStart = shades.start;
+          bgGradEnd = shades.end;
+          this.ctx.strokeStyle = borderCol;
+          this.ctx.shadowColor = borderCol;
         } else {
           bgGradStart = bgL >= 0.5 ? '#f1f5f9' : '#0f172a';
           bgGradEnd = bgL >= 0.5 ? '#cbd5e1' : '#1e293b';
