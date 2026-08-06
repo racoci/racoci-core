@@ -19,6 +19,7 @@ interface VisualNode {
   targetX?: number;
   targetY?: number;
   properties?: Record<string, string>;
+  isNewTicks?: number;
 }
 
 interface VisualEdge {
@@ -31,6 +32,7 @@ interface VisualEdge {
   isRemoved: boolean;
   pulseOffset: number; // for flow animation
   color?: string;
+  isNewTicks?: number;
 }
 
 interface VisualMembrane {
@@ -42,6 +44,7 @@ interface VisualMembrane {
   isRemoved: boolean;
   spin?: number;
   color?: string;
+  isNewTicks?: number;
 }
 
 export class CanvasRenderer {
@@ -555,6 +558,43 @@ export class CanvasRenderer {
         }
       }
     }
+
+    // 5. Cooldown on "New" glow animations (fade from green back to normal/custom color after 60 frames)
+    nodesArr.forEach(node => {
+      if (node.isNew) {
+        if (node.isNewTicks === undefined) {
+          node.isNewTicks = 0;
+        }
+        node.isNewTicks++;
+        if (node.isNewTicks > 60) { // 1 second at 60 FPS
+          node.isNew = false;
+        }
+      }
+    });
+
+    this.edges.forEach(edge => {
+      if (edge.isNew) {
+        if (edge.isNewTicks === undefined) {
+          edge.isNewTicks = 0;
+        }
+        edge.isNewTicks++;
+        if (edge.isNewTicks > 60) {
+          edge.isNew = false;
+        }
+      }
+    });
+
+    this.membranes.forEach(mem => {
+      if (mem.isNew) {
+        if (mem.isNewTicks === undefined) {
+          mem.isNewTicks = 0;
+        }
+        mem.isNewTicks++;
+        if (mem.isNewTicks > 60) {
+          mem.isNew = false;
+        }
+      }
+    });
   }
 
   /**
