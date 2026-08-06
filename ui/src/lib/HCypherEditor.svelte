@@ -214,12 +214,12 @@
     bind:value
     placeholder="// Enter H-Cypher declarations..."
     spellcheck="false"
-    on:scroll={handleScroll}
-    on:input={updateCursor}
-    on:click={updateCursor}
-    on:keyup={updateCursor}
-    on:select={updateCursor}
-    on:focus={updateCursor}
+    onscroll={handleScroll}
+    oninput={updateCursor}
+    onclick={updateCursor}
+    onkeyup={updateCursor}
+    onselect={updateCursor}
+    onfocus={updateCursor}
   ></textarea>
 </div>
 

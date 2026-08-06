@@ -57,6 +57,7 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <span 
   class="color-tag-wrapper"
   onmouseenter={() => isHovered = true}

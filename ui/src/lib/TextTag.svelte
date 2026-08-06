@@ -22,7 +22,7 @@
   class="text-tag" 
   style:--tag-color={color} 
   style:--tag-bg={bgColor}
-  on:click={onclick}
+  onclick={onclick}
 >
   {#if children}
     {@render children()}
