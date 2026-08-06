@@ -25,12 +25,20 @@
     }
   });
 
+  // Watch physicsSettings changes and sync them
+  $effect(() => {
+    if (workspaceState.renderer && workspaceState.physicsSettings) {
+      workspaceState.renderer.physicsSettings = workspaceState.physicsSettings;
+    }
+  });
+
   onMount(() => {
     if (canvasElement && containerElement) {
       // Instantiate 2D CanvasRenderer
       workspaceState.renderer = new CanvasRenderer(canvasElement, (node) => {
         workspaceState.selectedNode = node;
       });
+      workspaceState.renderer.physicsSettings = workspaceState.physicsSettings; // bind physicsSettings!
 
       // Handle dynamic resizing
       const handleResize = () => {

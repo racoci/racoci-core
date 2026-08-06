@@ -8,6 +8,7 @@
   import WorkspacesView from './WorkspacesView.svelte';
   import SSRSimulatorView from './SSRSimulatorView.svelte';
   import DevToolsView from './DevToolsView.svelte';
+  import PhysicsSettingsView from './PhysicsSettingsView.svelte';
 
   // Props using Svelte 5 runes
   let { node }: { node: WidgetNodeType } = $props();
@@ -21,7 +22,8 @@
     { value: 'projection3d', label: '3D View (Projection)', icon: '🌐' },
     { value: 'workspaces', label: 'Workspaces List', icon: '🗂️' },
     { value: 'ssr_simulator', label: 'Smart SSR Simulator', icon: '⚡' },
-    { value: 'dev_tools', label: 'Developer Tools (DPI Segment)', icon: '🛠️' }
+    { value: 'dev_tools', label: 'Developer Tools (DPI Segment)', icon: '🛠️' },
+    { value: 'physics_settings', label: 'Simulation Settings (Matrix)', icon: '⚙️' }
   ];
 
   function handleDragStart(e: DragEvent) {
@@ -135,6 +137,8 @@
         <SSRSimulatorView />
       {:else if node.widgetType === 'dev_tools'}
         <DevToolsView />
+      {:else if node.widgetType === 'physics_settings'}
+        <PhysicsSettingsView />
       {/if}
     {/if}
   </div>

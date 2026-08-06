@@ -33,6 +33,22 @@ MATCH {
   selectedNode = $state<any>(null);
   renderer: any = null; // CanvasRenderer reference
 
+  // Global Physics Simulation Settings (Customizable via new Simulation Widget)
+  physicsSettings = $state({
+    maxIntermediatePoints: 5,
+    showIntermediatePoints: false,
+    masses: {
+      atom: 1.0,                     // base mass of standard atoms
+      segment: 0.25,                 // base mass of intermediate points
+    },
+    forces: {
+      atom_atom: 1500,               // kRepulsion between standard atoms
+      atom_nonSuccessive: 150,       // repulsion between atoms and intermediate points
+      nonSuccessive_nonSuccessive: 180, // repulsion between different intermediate points
+      successive_tension: 0.16,      // elastic spring tension between consecutive points
+    }
+  });
+
   // Predefined projections / workspaces list
   workspaces = [
     { id: 'kernel', name: 'Holds Kernel Overview', updated: '2026-03-05' },
@@ -75,9 +91,21 @@ MATCH {
                 widgetType: 'canvas'
               },
               {
-                type: 'widget',
-                id: 'widget-3d',
-                widgetType: 'projection3d'
+                type: 'split',
+                split: 'horizontal',
+                percent: 55,
+                children: [
+                  {
+                    type: 'widget',
+                    id: 'widget-3d',
+                    widgetType: 'projection3d'
+                  },
+                  {
+                    type: 'widget',
+                    id: 'widget-physics-settings',
+                    widgetType: 'physics_settings'
+                  }
+                ]
               }
             ]
           }

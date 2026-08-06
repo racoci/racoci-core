@@ -52,6 +52,7 @@ export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private animationFrameId: number | null = null;
+  public physicsSettings: any = null; // Bindable from Svelte for loose coupling
 
   // Active elements
   private nodes: Map<string, VisualNode> = new Map();
@@ -211,7 +212,8 @@ export class CanvasRenderer {
         const dx = tNode.x - sNode.x;
         const dy = tNode.y - sNode.y;
         const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-        const numPoints = Math.max(0, Math.floor(dist / 45) - 1); // segment every 45px
+        // Clamp the number of intermediate nodes to a maximum of 5 to not overload the simulation!
+        const numPoints = Math.min(5, Math.max(0, Math.floor(dist / 45) - 1));
         for (let i = 1; i <= numPoints; i++) {
           const t = i / (numPoints + 1);
           points.push({
@@ -278,7 +280,7 @@ export class CanvasRenderer {
    */
   private updatePhysics() {
     const nodesArr = Array.from(this.nodes.values());
-    const kRepulsion = 1400; // force of node separation
+    const kRepulsion = (this.physicsSettings?.forces?.atom_atom) ?? 1500; // dynamically bound!
     const kGravity = 0.015;  // gentle pull toward center
     const kDamping = 0.65;   // higher friction (lower value dampens speed faster)
     const kSpring = 0.015;   // gentle spring force
@@ -303,8 +305,9 @@ export class CanvasRenderer {
 
         if (dist < 350) {
           const force = kRepulsion / (dist * dist);
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
+          const mass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+          const fx = (dx / dist) * force / mass;
+          const fy = (dy / dist) * force / mass;
 
           if (n1.id !== this.draggedNodeId) {
             n1.vx -= fx;
@@ -396,7 +399,7 @@ export class CanvasRenderer {
           const n = edge.points.length;
           const segmentRestLen = 45; // target rest step size
 
-          // (A) joint spring tension between consecutive points
+          // (A) Joint spring tension between consecutive points
           for (let k = 0; k <= n; k++) {
             const ax = (k === 0) ? sCoord.x : edge.points[k - 1].x;
             const ay = (k === 0) ? sCoord.y : edge.points[k - 1].y;
@@ -406,34 +409,92 @@ export class CanvasRenderer {
             const jdx = bx - ax;
             const jdy = by - ay;
             const jd = Math.sqrt(jdx * jdx + jdy * jdy) || 1;
-            const jforce = (jd - segmentRestLen) * 0.12; // elastic spring tension
+            const successiveTension = (this.physicsSettings?.forces?.successive_tension) ?? 0.16;
+            const jforce = (jd - segmentRestLen) * successiveTension; // dynamically bound!
             const jfx = (jdx / jd) * jforce;
             const jfy = (jdy / jd) * jforce;
 
             if (k > 0) {
-              edge.points[k - 1].vx += jfx;
-              edge.points[k - 1].vy += jfy;
+              const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+              edge.points[k - 1].vx += jfx / segMass;
+              edge.points[k - 1].vy += jfy / segMass;
             } else if (sNode && sNode.id !== this.draggedNodeId) {
-              sNode.vx += jfx * 0.15;
-              sNode.vy += jfy * 0.15;
+              const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+              sNode.vx += (jfx * 0.15) / atomMass;
+              sNode.vy += (jfy * 0.15) / atomMass;
             }
 
             if (k < n) {
-              edge.points[k].vx -= jfx;
-              edge.points[k].vy -= jfy;
+              const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+              edge.points[k].vx -= jfx / segMass;
+              edge.points[k].vy -= jfy / segMass;
             } else if (tNode && tNode.id !== this.draggedNodeId) {
-              tNode.vx -= jfx * 0.15;
-              tNode.vy -= jfy * 0.15;
+              const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+              tNode.vx -= (jfx * 0.15) / atomMass;
+              tNode.vy -= (jfy * 0.15) / atomMass;
             }
           }
 
-          // (B) obstacle avoidance repulsion on intermediate points
+          // (B) Proportional 2-second (120 frames) re-sampling to add/remove points on stretch
+          if (this.frameCount % 120 === 0 && sNode && tNode) {
+            const dx = tNode.x - sNode.x;
+            const dy = tNode.y - sNode.y;
+            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+            // Clamp desired intermediate nodes count to a maximum of maxIntermediatePoints!
+            const maxPts = (this.physicsSettings?.maxIntermediatePoints) ?? 5;
+            const desiredNumPoints = Math.min(
+              maxPts, 
+              Math.max(0, Math.floor(dist / 45) - 1)
+            );
+            
+            if (desiredNumPoints !== edge.points.length) {
+              if (desiredNumPoints < edge.points.length) {
+                edge.points = edge.points.slice(0, desiredNumPoints);
+              } else {
+                const diff = desiredNumPoints - edge.points.length;
+                const lastPt = edge.points[edge.points.length - 1] || sNode;
+                for (let i = 1; i <= diff; i++) {
+                  const t = i / (diff + 1);
+                  edge.points.push({
+                    x: lastPt.x + (tNode.x - lastPt.x) * t,
+                    y: lastPt.y + (tNode.y - lastPt.y) * t,
+                    vx: 0, vy: 0
+                  });
+                }
+              }
+            }
+          }
+
+          // (C) Strain-adaptive decimation (prune intermediate points under low tension/strain)
+          let totalStrain = 0;
+          for (let k = 0; k <= n; k++) {
+            const ax = (k === 0) ? sCoord.x : edge.points[k - 1].x;
+            const ay = (k === 0) ? sCoord.y : edge.points[k - 1].y;
+            const bx = (k === n) ? tCoord.x : edge.points[k].x;
+            const by = (k === n) ? tCoord.y : edge.points[k].y;
+            const d = Math.sqrt((bx - ax)**2 + (by - ay)**2) || 1;
+            totalStrain += Math.abs(d - segmentRestLen);
+          }
+          const avgStrain = totalStrain / (n + 1);
+
+          if (avgStrain < 8.0) { // threshold of low strain (nearly relaxed/straight)
+            if (edge.isNewTicks === undefined) edge.isNewTicks = 0;
+            edge.isNewTicks++;
+            if (edge.isNewTicks > 60) { // low strain for > 1 second
+              if (edge.points.length > 0) {
+                edge.points.pop(); // safely remove 1 intermediate node
+              }
+              edge.isNewTicks = 0;
+            }
+          } else {
+            edge.isNewTicks = 0;
+          }
+
+          // (D) Obstacle avoidance repulsion from standard nodes
           edge.points.forEach(pt => {
             nodesArr.forEach(node => {
               if (node.isRemoved) return;
-              if (node.id === edge.source || node.id === node.id) { // skip endpoints
-                if (node.id === edge.source || node.id === edge.target) return;
-              }
+              if (node.id === edge.source || node.id === edge.target) return;
 
               const rdx = pt.x - node.x;
               const rdy = pt.y - node.y;
@@ -441,14 +502,16 @@ export class CanvasRenderer {
               const avoidanceRadius = 80;
 
               if (rdist < avoidanceRadius) {
-                // lower intensity repulsion (less mass)
-                const rforce = 150 / (rdist * rdist);
+                // lower intensity repulsion (less mass) - dynamically bound!
+                const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+                const atomNonSuccessive = (this.physicsSettings?.forces?.atom_nonSuccessive) ?? 150;
+                const rforce = (atomNonSuccessive / (rdist * rdist)) / segMass;
                 pt.vx += (rdx / rdist) * rforce;
                 pt.vy += (rdy / rdist) * rforce;
               }
             });
 
-            // (C) apply velocity and damping
+            // (E) Apply velocity and damping
             pt.vx *= kDamping;
             pt.vy *= kDamping;
             pt.x += pt.vx;
@@ -461,6 +524,47 @@ export class CanvasRenderer {
         }
       }
     });
+
+    // 2.3 Symmetrical repulsion between ALL intermediate points (except successive ones on the same edge)
+    const allPts: { pt: { x: number; y: number; vx: number; vy: number; }; edgeId: string; idx: number; }[] = [];
+    this.edges.forEach(edge => {
+      if (edge.points) {
+        edge.points.forEach((pt, idx) => {
+          allPts.push({ pt, edgeId: edge.id || edge.label || `${edge.source}-${edge.target}`, idx });
+        });
+      }
+    });
+
+    for (let i = 0; i < allPts.length; i++) {
+      const p1 = allPts[i];
+      for (let j = i + 1; j < allPts.length; j++) {
+        const p2 = allPts[j];
+        
+        // Skip if they are successive points on the same edge
+        if (p1.edgeId === p2.edgeId && Math.abs(p1.idx - p2.idx) <= 1) {
+          continue;
+        }
+
+        const dx = p1.pt.x - p2.pt.x;
+        const dy = p1.pt.y - p2.pt.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const avoidanceRadius = 55;
+
+        if (dist < avoidanceRadius) {
+          // Dynamically bound segment repulsion scaled by segment mass!
+          const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+          const nonSuccessiveForces = (this.physicsSettings?.forces?.nonSuccessive_nonSuccessive) ?? 180;
+          const force = (nonSuccessiveForces / (dist * dist)) / segMass;
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+
+          p1.pt.vx += fx;
+          p1.pt.vy += fy;
+          p2.pt.vx -= fx;
+          p2.pt.vy -= fy;
+        }
+      }
+    }
 
     // 2.5 Membrane Exclusion Force for External Atoms
     // Finds any active atoms that are not inside a given membrane, and applies
@@ -1242,6 +1346,20 @@ export class CanvasRenderer {
       this.ctx.fill();
 
       this.ctx.restore();
+
+      // 2.5 Draw neon yellow joints for intermediate points if showIntermediatePoints is enabled!
+      if (this.physicsSettings?.showIntermediatePoints && edge.points && edge.points.length > 0) {
+        this.ctx.save();
+        this.ctx.fillStyle = '#facc15';
+        this.ctx.shadowColor = '#facc15';
+        this.ctx.shadowBlur = 8;
+        edge.points.forEach(pt => {
+          this.ctx.beginPath();
+          this.ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+          this.ctx.fill();
+        });
+        this.ctx.restore();
+      }
 
       // 3. Draw dynamic glowing flow pulse particles moving along the exact spline path
       if (!isRemovedEdge) {
