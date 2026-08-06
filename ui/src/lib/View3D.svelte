@@ -284,6 +284,9 @@
     });
     resizeObserver.observe(containerElement);
 
+    // Register native non-passive scroll wheel listener for absolute zoom reliability!
+    canvasElement.addEventListener('wheel', handleWheel, { passive: false });
+
     // 3D physics update and Painter's render loop
     const loop = () => {
       update3DPhysics();
@@ -296,6 +299,9 @@
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', resize);
+      if (canvasElement) {
+        canvasElement.removeEventListener('wheel', handleWheel);
+      }
       resizeObserver.disconnect();
     };
   });
@@ -800,6 +806,17 @@
     onwheel={handleWheel}
     title="Drag mouse to rotate 3D topology"
   ></canvas>
+  
+  <!-- Floating Cybernetic Zoom Buttons in the Viewport -->
+  <div class="zoom-controls">
+    <button class="zoom-btn" onclick={() => scale = Math.min(1000, scale + 25)} title="Zoom In">
+      ＋
+    </button>
+    <button class="zoom-btn" onclick={() => scale = Math.max(100, scale - 25)} title="Zoom Out">
+      －
+    </button>
+  </div>
+
   <div class="view3d-overlay">
     <span class="overlay-badge">Perspective 3D</span>
     <span class="overlay-text">Mouse Drag to Rotate</span>
@@ -852,5 +869,45 @@
   .overlay-text {
     font-size: 8px;
     color: #45a29e;
+  }
+
+  /* Cybernetic Floating Zoom Controls */
+  .zoom-controls {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+  }
+
+  .zoom-btn {
+    width: 28px;
+    height: 28px;
+    background-color: rgba(20, 22, 32, 0.85);
+    border: 1px solid rgba(168, 85, 247, 0.4);
+    border-radius: 4px;
+    color: #c084fc;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+    box-shadow: 0 0 6px rgba(168, 85, 247, 0.2);
+    user-select: none;
+  }
+
+  .zoom-btn:hover {
+    background-color: rgba(168, 85, 247, 0.15);
+    border-color: #a855f7;
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
+  }
+
+  .zoom-btn:active {
+    transform: scale(0.95);
   }
 </style>
