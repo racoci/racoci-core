@@ -31,6 +31,8 @@
   let hoveredNodeId = $state<string | null>(null);
   let mouseCSSX = $state<number | null>(null);
   let mouseCSSY = $state<number | null>(null);
+  let scale = $state(260); // Perspective scaling factor / zoom
+  let distance = $state(300); // Camera distance from origin
   let lastMouseX = 0;
   let lastMouseY = 0;
 
@@ -153,8 +155,6 @@
         const z2 = node.y * Math.sin(angleX) + z1_old * Math.cos(angleX);
 
         // 2. Solve the perspective projection equations for the desired rotated x1 and y2
-        const scale = 260;
-        const distance = 300;
         const depth = 1 / (distance + z2);
 
         const x1 = (clickX - canvasElement.width / 2) / (scale * depth);
@@ -240,6 +240,18 @@
     mouseCSSY = null;
     if (canvasElement) {
       canvasElement.style.cursor = 'default';
+    }
+  }
+
+  // Linear focal zoom handler via mouse wheel scrolling!
+  function handleWheel(e: WheelEvent) {
+    e.preventDefault(); // prevent scrolling the parent HTML page
+    if (e.deltaY < 0) {
+      // Zoom-in: increase lens focal scale length
+      scale = Math.min(1000, scale + 25);
+    } else {
+      // Zoom-out: decrease lens focal scale length
+      scale = Math.max(100, scale - 25);
     }
   }
 
@@ -497,9 +509,6 @@
     }
     ctx.restore();
 
-    const scale = 260; // Perspective scaling factor
-    const distance = 300; // Camera distance from origin
-
     // Rotate and project nodes
     interface ProjectedNode {
       id: string;
@@ -713,7 +722,6 @@
 
       const Mx = mouseCSSX - width / 2;
       const My = mouseCSSY - height / 2;
-      const scale = 260;
       const D_lenSq = Mx * Mx + My * My + scale * scale;
 
       // Find first node sphere intersection in 3D
@@ -789,6 +797,7 @@
     onmousedown={handleMouseDown}
     onmousemove={handleCanvasMouseMove}
     onmouseleave={handleCanvasMouseLeave}
+    onwheel={handleWheel}
     title="Drag mouse to rotate 3D topology"
   ></canvas>
   <div class="view3d-overlay">
