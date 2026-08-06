@@ -138,21 +138,41 @@
     if (isDraggingCamera) {
       angleY += dx * 0.007; // adjust rotation sensitivity
       angleX += dy * 0.007;
-    } else if (draggedNodeId) {
+    } else if (draggedNodeId && canvasElement) {
       const node = nodes3D.get(draggedNodeId);
       if (node) {
-        // Project 2D screen dragging delta (dx, dy) back into 3D relative to camera rotation angles!
-        // We use the exact perspective projection scale formula to map screen pixels to 3D units 1:1!
-        const factor = (300 + node.z) / 260;
-        const shiftX = dx * factor;
-        const shiftY = dy * factor;
+        // Calculate exact raw CSS mouse coordinates inside the canvas
+        const rect = canvasElement.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
 
-        node.x += Math.cos(angleY) * shiftX;
-        node.z -= Math.sin(angleY) * shiftX;
-        node.y += Math.cos(angleX) * shiftY;
-        node.z += Math.sin(angleX) * shiftY;
+        // 1. Get the current rotated Z coordinate (z2) of the node to maintain dragging depth
+        const x1_old = node.x * Math.cos(angleY) - node.z * Math.sin(angleY);
+        const z1_old = node.x * Math.sin(angleY) + node.z * Math.cos(angleY);
+        const z2 = node.y * Math.sin(angleX) + z1_old * Math.cos(angleX);
 
-        // Reset velocity so it follows mouse exactly
+        // 2. Solve the perspective projection equations for the desired rotated x1 and y2
+        const scale = 260;
+        const distance = 300;
+        const depth = 1 / (distance + z2);
+
+        const x1 = (clickX - canvasElement.width / 2) / (scale * depth);
+        const y2 = (clickY - canvasElement.height / 2) / (scale * depth);
+
+        // 3. Apply the exact mathematical inverse rotations to retrieve unscaled 3D coordinates!
+        // Un-rotate around X axis (Y-Z plane) by angleX
+        const y_new = y2 * Math.cos(angleX) + z2 * Math.sin(angleX);
+        const z1 = -y2 * Math.sin(angleX) + z2 * Math.cos(angleX);
+
+        // Un-rotate around Y axis (X-Z plane) by angleY
+        const x_new = x1 * Math.cos(angleY) + z1 * Math.sin(angleY);
+        const z_new = -x1 * Math.sin(angleY) + z1 * Math.cos(angleY);
+
+        node.x = x_new;
+        node.y = y_new;
+        node.z = z_new;
+
+        // Reset velocity so it stays perfectly static when mouse stops
         node.vx = 0;
         node.vy = 0;
         node.vz = 0;
