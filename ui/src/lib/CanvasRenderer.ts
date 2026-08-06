@@ -798,7 +798,14 @@ export class CanvasRenderer {
       this.ctx.strokeStyle = strokeColor;
       this.ctx.fillStyle = grad;
       this.ctx.shadowColor = shadowColor;
-      this.ctx.shadowBlur = 15;
+
+      // Membrane shadow/glow - smoothly fades from high brightness down to normal over 60 frames!
+      let baseShadowBlur = 15;
+      if (m.isNew && m.isNewTicks !== undefined) {
+        const t = Math.min(1.0, m.isNewTicks / 60);
+        baseShadowBlur += 15 * (1 - t); // smoothly fades extra glow from +15 down to +0
+      }
+      this.ctx.shadowBlur = baseShadowBlur;
 
       // Draw the closed polygon path
       this.ctx.beginPath();
@@ -1040,8 +1047,6 @@ export class CanvasRenderer {
       let strokeColor = finalEdgeColor;
       if (isRemovedEdge) {
         strokeColor = applyContrastProtection(this.backgroundColor, '#ef4444');
-      } else if (edge.isNew) {
-        strokeColor = applyContrastProtection(this.backgroundColor, '#22c55e');
       }
 
       // 1. Draw the high-contrast sleek Bezier spine line
@@ -1053,7 +1058,14 @@ export class CanvasRenderer {
         this.ctx.lineTo(tx, ty);
       }
       this.ctx.strokeStyle = strokeColor;
-      this.ctx.lineWidth = isRemovedEdge ? 1.25 : 1.75;
+
+      // Symmetrical smooth line width tapering on spawning! Starts thicker and slims down smoothly.
+      let baseLineWidth = isRemovedEdge ? 1.25 : 1.75;
+      if (edge.isNew && edge.isNewTicks !== undefined) {
+        const t = Math.min(1.0, edge.isNewTicks / 60);
+        baseLineWidth += 1.5 * (1 - t); // smoothly tapers from +1.5px down to +0px thickness
+      }
+      this.ctx.lineWidth = baseLineWidth;
       if (isRemovedEdge) {
         this.ctx.setLineDash([4, 4]);
       } else {
@@ -1175,12 +1187,6 @@ export class CanvasRenderer {
           bgGradEnd = bgL >= 0.5 ? '#bae6fd' : '#1e40af';
           this.ctx.strokeStyle = activeColor;
           this.ctx.shadowColor = activeColor;
-        } else if (node.isNew && baseColor === '#ffffff') {
-          const finalNewColor = applyContrastProtection(this.backgroundColor, '#22c55e');
-          bgGradStart = bgL >= 0.5 ? '#dcfce7' : '#052e16';
-          bgGradEnd = bgL >= 0.5 ? '#bbf7d0' : '#14532d';
-          this.ctx.strokeStyle = finalNewColor;
-          this.ctx.shadowColor = finalNewColor;
         } else if (baseColor !== '#ffffff') {
           const shades = this.getGradientShades(baseColor, bgL);
           bgGradStart = shades.start;
@@ -1201,8 +1207,13 @@ export class CanvasRenderer {
       const w = Math.max(55, textWidth + 24);
       const h = 36; // perfect height for title + subtitle
 
-      // Node shadow/glow
-      this.ctx.shadowBlur = this.draggedNodeId === node.id ? 22 : 10;
+      // Node shadow/glow - smoothly fades from high brightness down to normal over 60 frames!
+      let baseShadowBlur = this.draggedNodeId === node.id ? 22 : 10;
+      if (node.isNew && node.isNewTicks !== undefined) {
+        const t = Math.min(1.0, node.isNewTicks / 60);
+        baseShadowBlur += 15 * (1 - t); // smoothly fades extra glow from +15 down to +0
+      }
+      this.ctx.shadowBlur = baseShadowBlur;
 
       // Draw background rounded square
       const grad = this.ctx.createLinearGradient(node.x, node.y - h / 2, node.x, node.y + h / 2);
