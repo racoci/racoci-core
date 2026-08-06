@@ -707,58 +707,126 @@
       });
     }
 
-    // 5. Draw Debug Raycast Pointer Beam & Crosshair
+    // 5. Draw Debug Raycast Pointer Beam & Crosshair (3D perspective intersections)
     if (mouseCSSX !== null && mouseCSSY !== null) {
       ctx.save();
-      // Draw concentric circular target crosshair at mouse pointer
+
+      const Mx = mouseCSSX - width / 2;
+      const My = mouseCSSY - height / 2;
+      const scale = 260;
+      const distance = 300;
+      const D_lenSq = Mx * Mx + My * My + scale * scale;
+
+      // Find first node sphere intersection in 3D
+      let intersectedNodeId: string | null = null;
+      let firstIntersectionT = Infinity;
+      let intersectX = 0, intersectY = 0, intersectZ = 0;
+
+      nodes3D.forEach(node => {
+        if (node.isRemoved) return;
+
+        // Get rotated coordinates
+        const x1 = node.x * Math.cos(angleY) - node.z * Math.sin(angleY);
+        const z1 = node.x * Math.sin(angleY) + node.z * Math.cos(angleY);
+        const y2 = node.y * Math.cos(angleX) - z1 * Math.sin(angleX);
+        const z2 = node.y * Math.sin(angleX) + z1 * Math.cos(angleX);
+
+        // Ray-Sphere intersection calculation relative to camera at (0, 0, -300)
+        const Wx = x1;
+        const Wy = y2;
+        const Wz = z2 + 300; 
+
+        const t_closest = (Wx * Mx + Wy * My + Wz * scale) / D_lenSq;
+
+        if (t_closest > 0) {
+          const px = t_closest * Mx;
+          const py = t_closest * My;
+          const pz = -300 + t_closest * scale;
+
+          const dx = px - x1;
+          const dy = py - y2;
+          const dz = pz - z2;
+          const distSq = dx * dx + dy * dy + dz * dz;
+
+          // Sphere radius is node.radius (12px unscaled), with generous margin
+          const radiusSq = 18 * 18; 
+          if (distSq < radiusSq) {
+            if (t_closest < firstIntersectionT) {
+              firstIntersectionT = t_closest;
+              intersectedNodeId = node.id;
+              intersectX = px;
+              intersectY = py;
+              intersectZ = pz;
+            }
+          }
+        }
+      });
+
+      // Draw mouse crosshair and 3D ray indicator
       ctx.strokeStyle = '#ff007f'; // neon pink
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(mouseCSSX, mouseCSSY, 4, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.lineWidth = 1;
 
-      ctx.beginPath();
-      ctx.arc(mouseCSSX, mouseCSSY, 12, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Crosshair lines
+      // Draw pointer target crosshair
+      ctx.beginPath(); ctx.arc(mouseCSSX, mouseCSSY, 4, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mouseCSSX, mouseCSSY, 12, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(mouseCSSX - 16, mouseCSSY); ctx.lineTo(mouseCSSX + 16, mouseCSSY);
       ctx.moveTo(mouseCSSX, mouseCSSY - 16); ctx.lineTo(mouseCSSX, mouseCSSY + 16);
       ctx.stroke();
 
-      // Find closest projected node to mouse
-      let closestNodeId: string | null = null;
-      let closestDist = Infinity;
-      let targetX = 0, targetY = 0;
+      if (intersectedNodeId) {
+        // Find projected coordinate of closest node
+        const pNode = projMap.get(intersectedNodeId);
+        if (pNode) {
+          // Draw a glowing high-contrast concentric target halo directly around the intersected node!
+          ctx.strokeStyle = '#22c55e'; // neon green for hit!
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(pNode.projX, pNode.projY, pNode.projRadius + 6, 0, Math.PI * 2);
+          ctx.stroke();
 
-      for (const [id, coord] of latestProjCoords.entries()) {
-        const dx = mouseCSSX - coord.x;
-        const dy = mouseCSSY - coord.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < closestDist) {
-          closestNodeId = id;
-          closestDist = dist;
-          targetX = coord.x;
-          targetY = coord.y;
+          // Draw hit text label
+          ctx.fillStyle = '#22c55e';
+          ctx.font = 'bold 9px monospace';
+          ctx.fillText(`RAY INTERSECTED [${intersectedNodeId}] AT DEPTH Z: ${intersectZ.toFixed(1)}`, mouseCSSX + 20, mouseCSSY + 4);
+        }
+      } else {
+        // If no node is hit, show ground plane intersection (at Y_rotated = 120)
+        if (My > 0) {
+          const t_ground = 120 / My;
+          if (t_ground > 0) {
+            const gx_3d = t_ground * Mx;
+            const gy_3d = 120;
+            const gz_3d = -300 + t_ground * scale;
+
+            // Project ground intersection point back to screen
+            const depth = 1 / (distance + gz_3d);
+            const gx = gx_3d * scale * depth + width / 2;
+            const gy = gy_3d * scale * depth + height / 2;
+
+            // Draw a flat cybernetic ellipse resting on the ground grid representing the ray collision point!
+            ctx.strokeStyle = '#ff007f';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.ellipse(gx, gy, 18 * scale * depth, 6 * scale * depth, 0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw outer secondary ripple
+            ctx.save();
+            ctx.globalAlpha = 0.4;
+            ctx.beginPath();
+            ctx.ellipse(gx, gy, 30 * scale * depth, 10 * scale * depth, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            // Print ground intersection label
+            ctx.fillStyle = '#ff007f';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`RAY INTERSECTED GROUND AT: (${gx_3d.toFixed(0)}, 120, ${gz_3d.toFixed(0)})`, mouseCSSX + 20, mouseCSSY + 4);
+          }
         }
       }
 
-      if (closestNodeId) {
-        // Draw a dashed vector ray line from mouse to target node's projected center!
-        ctx.strokeStyle = '#ff007f';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(mouseCSSX, mouseCSSY);
-        ctx.lineTo(targetX, targetY);
-        ctx.stroke();
-
-        // Print distance label
-        ctx.fillStyle = '#ff007f';
-        ctx.font = 'bold 9px monospace';
-        ctx.fillText(`RAY TO [${closestNodeId}]: ${closestDist.toFixed(1)}px`, mouseCSSX + 20, mouseCSSY + 4);
-      }
       ctx.restore();
     }
   }
