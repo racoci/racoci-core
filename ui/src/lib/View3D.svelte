@@ -13,15 +13,15 @@
     const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
     
     if (bgL >= 0.5) {
-      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.95);
-      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.88);
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.55), 0.95);
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.55), 0.88);
       return {
         start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
         end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
       };
     } else {
-      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.08);
-      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.4), 0.16);
+      const startRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.65), 0.32); // vibrant emissive top
+      const endRgb = hslToRgb(hsl.h, Math.min(hsl.s, 0.65), 0.08);  // deep colorful bottom
       return {
         start: rgbToHex(startRgb.r, startRgb.g, startRgb.b),
         end: rgbToHex(endRgb.r, endRgb.g, endRgb.b)
@@ -649,7 +649,7 @@
     ctx.beginPath(); ctx.moveTo(axX, axY); ctx.lineTo(axX + zAx.rx, axY + zAx.ry); ctx.stroke();
     ctx.restore();
 
-    // 2. Draw Edges (3D Perspective Bezier Curves)
+    // 2. Draw Edges (3D Perspective Bezier Curves with Direction-Sensitive Ellipse Clipping)
     if (workspaceState.parseResult) {
       ctx.save();
       workspaceState.parseResult.edges.forEach(edge => {
@@ -661,15 +661,47 @@
           const avgDepth = (sourceProj.rotZ + targetProj.rotZ) / 2;
           const alpha = Math.max(0.1, Math.min(1.0, 1 - (avgDepth + 150) / 300));
 
-          const sx = sourceProj.projX;
-          const sy = sourceProj.projY;
-          const tx = targetProj.projX;
-          const ty = targetProj.projY;
+          // Calculate dynamic bounds of source node scaled with depth
+          const depthScaleS = distance / (distance + sourceProj.rotZ);
+          ctx.font = 'bold 9px monospace';
+          const textWidthS = ctx.measureText(sourceProj.label).width;
+          const wS = Math.max(50, textWidthS + 16) * depthScaleS;
+          const hS = 22 * depthScaleS;
+
+          // Calculate dynamic bounds of target node scaled with depth
+          const depthScaleT = distance / (distance + targetProj.rotZ);
+          const textWidthT = ctx.measureText(targetProj.label).width;
+          const wT = Math.max(50, textWidthT + 16) * depthScaleT;
+          const hT = 22 * depthScaleT;
+
+          // Center-to-center vector on the screen
+          const dx_cc = targetProj.projX - sourceProj.projX;
+          const dy_cc = targetProj.projY - sourceProj.projY;
+          const dist_cc = Math.sqrt(dx_cc * dx_cc + dy_cc * dy_cc) || 1;
+          const angle = Math.atan2(dy_cc, dx_cc);
+
+          // Calculate direction-sensitive ellipse intersection distances!
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+
+          const rwS = wS / 2;
+          const rhS = hS / 2;
+          const clipDistS = 1 / Math.sqrt((cosA / rwS) ** 2 + (sinA / rhS) ** 2) + 2; // +2px buffer
+
+          const rwT = wT / 2;
+          const rhT = hT / 2;
+          // Add extra buffer of 7px on target to perfectly clear the wedge arrowhead!
+          const clipDistT = 1 / Math.sqrt((cosA / rwT) ** 2 + (sinA / rhT) ** 2) + 7;
+
+          // Clip edge endpoints precisely at the node boundaries!
+          const sx = sourceProj.projX + cosA * clipDistS;
+          const sy = sourceProj.projY + sinA * clipDistS;
+          const tx = targetProj.projX - cosA * clipDistT;
+          const ty = targetProj.projY - sinA * clipDistT;
 
           const dx = tx - sx;
           const dy = ty - sy;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const angle = Math.atan2(dy, dx);
 
           // Quadratic Bezier control point for 3D curved line
           const bendAmount = Math.max(0, 120 - dist) * 0.4;
@@ -689,7 +721,7 @@
           ctx.lineWidth = Math.max(1.0, 2.5 * (distance / (distance + avgDepth)));
           ctx.stroke();
 
-          // Draw wedge arrowhead
+          // Draw wedge arrowhead precisely at the clipped target tip
           ctx.save();
           ctx.globalAlpha = alpha * 0.8;
           ctx.fillStyle = edge.color || '#3b82f6';
