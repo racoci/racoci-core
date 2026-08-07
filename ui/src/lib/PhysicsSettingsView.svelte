@@ -8,14 +8,14 @@
 
   // Symmetrical 3x3 Category Matrix configurations
   // Rows/Cols represent the categories: ATOM, SEGMENT (Non-successive), TENSION (Successive)
+  // We read variables directly (not using getter methods) so Svelte 5 registers them as active dependencies!
   const matrixCells = $derived([
     {
       row: 0, col: 0,
       id: 'atom_atom',
       label: 'Atom-Atom',
       desc: 'Atom separation',
-      get value() { return workspaceState.physicsSettings?.forces?.atom_atom ?? 1500; },
-      set value(v) { workspaceState.physicsSettings.forces.atom_atom = Math.round(v); },
+      value: workspaceState.physicsSettings?.forces?.atom_atom ?? 1500,
       min: 0,
       max: 3000,
     },
@@ -24,8 +24,7 @@
       id: 'atom_segment',
       label: 'Atom-Segment',
       desc: 'Obstacle avoidance',
-      get value() { return workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150; },
-      set value(v) { workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(v); },
+      value: workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150,
       min: 0,
       max: 1000,
     },
@@ -34,8 +33,7 @@
       id: 'segment_atom', // Mirrors row 0, col 1
       label: 'Segment-Atom',
       desc: 'Obstacle avoidance',
-      get value() { return workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150; },
-      set value(v) { workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(v); },
+      value: workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150,
       min: 0,
       max: 1000,
     },
@@ -44,8 +42,7 @@
       id: 'segment_segment',
       label: 'Segment-Segment',
       desc: 'Highway separation',
-      get value() { return workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180; },
-      set value(v) { workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive = Math.round(v); },
+      value: workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180,
       min: 0,
       max: 1000,
     },
@@ -54,12 +51,29 @@
       id: 'successive_tension',
       label: 'Tension-Tension',
       desc: 'Successive joint pull',
-      get value() { return workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16; },
-      set value(v) { workspaceState.physicsSettings.forces.successive_tension = parseFloat(v.toFixed(3)); },
+      value: workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16,
       min: 0.01,
       max: 0.50,
     }
   ]);
+
+  // Decoupled setter function to update deep properties on drag
+  function updateValue(id: string, val: number) {
+    if (!workspaceState.physicsSettings?.forces) return;
+    
+    if (id === 'atom_atom') {
+      workspaceState.physicsSettings.forces.atom_atom = Math.round(val);
+    } else if (id === 'atom_segment' || id === 'segment_atom') {
+      workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(val);
+    } else if (id === 'segment_segment') {
+      workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive = Math.round(val);
+    } else if (id === 'successive_tension') {
+      workspaceState.physicsSettings.forces.successive_tension = parseFloat(val.toFixed(3));
+    }
+    
+    // Re-assign reference to trigger Svelte 5 global reactivity instantly!
+    workspaceState.physicsSettings = { ...workspaceState.physicsSettings };
+  }
 
   // Click-drag gesture event handlers for the rotatable knobs
   function startDrag(e: MouseEvent, knobId: string, currentVal: number) {
@@ -83,10 +97,7 @@
     let newVal = startVal + (deltaY / 200) * range;
     newVal = Math.max(cell.min, Math.min(cell.max, newVal));
     
-    cell.value = newVal;
-    
-    // Force Svelte 5 global reactivity trigger!
-    workspaceState.physicsSettings = { ...workspaceState.physicsSettings };
+    updateValue(cell.id, newVal);
   }
 
   function stopDrag() {
