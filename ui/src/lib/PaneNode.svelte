@@ -52,7 +52,7 @@
   <!-- First partition child -->
   <div 
     class="split-child first" 
-    style="{node.split === 'vertical' ? `width: ${node.percent}%;` : `height: ${node.percent}%;`}"
+    style="{node.split === 'vertical' ? `width: ${node.percent}%; height: 100%;` : `height: ${node.percent}%; width: 100%;`}"
   >
     <LayoutNode node={node.children[0]} />
   </div>
@@ -71,7 +71,7 @@
   <!-- Second partition child -->
   <div 
     class="split-child second" 
-    style="{node.split === 'vertical' ? `width: ${100 - node.percent}%;` : `height: ${100 - node.percent}%;`}"
+    style="{node.split === 'vertical' ? `width: ${100 - node.percent}%; height: 100%;` : `height: ${100 - node.percent}%; width: 100%;`}"
   >
     <LayoutNode node={node.children[1]} />
   </div>

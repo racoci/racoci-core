@@ -74,7 +74,7 @@ MATCH {
       },
       {
         type: 'split',
-        split: 'vertical',
+        split: 'horizontal', // Top: H-Cypher Editor, Bottom: Views & Settings
         percent: 38,
         children: [
           {
@@ -84,12 +84,12 @@ MATCH {
           },
           {
             type: 'split',
-            split: 'vertical',
-            percent: 65,
+            split: 'vertical', // Left: 2D & 3D, Right: Physics Settings
+            percent: 70,       // 70% width for views, 30% width for settings
             children: [
               {
                 type: 'split',
-                split: 'vertical',
+                split: 'horizontal', // Top: 2D Canvas, Bottom: 3D Projection
                 percent: 50,
                 children: [
                   {
