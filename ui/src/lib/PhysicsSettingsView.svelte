@@ -8,7 +8,7 @@
 
   // Symmetrical 3x3 Category Matrix configurations
   // Rows/Cols represent the categories: ATOM, SEGMENT (Non-successive), TENSION (Successive)
-  // We read variables directly (not using getter methods) so Svelte 5 registers them as active dependencies!
+  // Directly reads the global workspaceState.physicsSettings state, securing deep reactivity!
   const matrixCells = $derived([
     {
       row: 0, col: 0,
@@ -115,9 +115,10 @@
     return `rgb(${r}, ${g}, ${b})`;
   }
 
-  // Find cell by row/col coordinates
-  function getCellAt(row: number, col: number) {
-    return matrixCells.find(c => c.row === row && c.col === col) || null;
+  // Find cell by row/col coordinates. Passing 'cells' array directly as a parameter
+  // registers the Svelte 5 template dependency explicitly, forcing re-runs on every drag!
+  function getCellAt(cells: any[], row: number, col: number) {
+    return cells.find(c => c.row === row && c.col === col) || null;
   }
 </script>
 
@@ -144,7 +145,6 @@
           max="15" 
           step="1" 
           bind:value={workspaceState.physicsSettings.maxIntermediatePoints} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider"
         />
         <span class="control-desc">Limits vertices per edge to prevent performance degradation. (Forcing at least 1 point for joints visibility!)</span>
@@ -156,7 +156,6 @@
             id="show-pts-checkbox"
             type="checkbox" 
             bind:checked={workspaceState.physicsSettings.showIntermediatePoints} 
-            onchange={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
             class="cyber-checkbox"
           />
           <span class="checkbox-custom"></span>
@@ -183,7 +182,6 @@
           max="5.0" 
           step="0.1" 
           bind:value={workspaceState.physicsSettings.masses.atom} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-yellow"
         />
         <span class="control-desc">Base mass of standard graph nodes. Higher mass dampens acceleration, making nodes heavier and more stable.</span>
@@ -202,7 +200,6 @@
           max="2.0" 
           step="0.05" 
           bind:value={workspaceState.physicsSettings.masses.segment} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-pink"
         />
         <span class="control-desc">Base mass of intermediate spline nodes. Lower mass makes edge strings extremely agile and responsive to obstacle repulsion.</span>
@@ -229,7 +226,8 @@
             <div class="matrix-row-header-cell">{rowLabel}</div>
             
             {#each [0, 1, 2] as cIdx}
-              {@const cell = getCellAt(rIdx, cIdx)}
+              <!-- Passing matrixCells as first argument explicitly triggers Svelte 5 template reactivity! -->
+              {@const cell = getCellAt(matrixCells, rIdx, cIdx)}
 
               {#if cell}
                 {@const pct = (cell.value - cell.min) / (cell.max - cell.min || 1)}
