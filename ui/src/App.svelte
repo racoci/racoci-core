@@ -26,9 +26,11 @@
     }, 1000);
 
     if (dockviewContainer) {
-      // Instantiate high-performance vanilla dockview-core engine
-      dockviewInstance = new DockviewComponent({
-        container: dockviewContainer,
+      console.log("INITIALIZING DOCKVIEW COMPONENT...");
+      
+      // Instantiate high-performance vanilla dockview-core engine with correct signature:
+      // new DockviewComponent(element, options)
+      dockviewInstance = new DockviewComponent(dockviewContainer, {
         createComponent: (options) => {
           const wrapper = document.createElement('div');
           wrapper.style.width = '100%';
@@ -73,6 +75,8 @@
         }
       });
 
+      console.log("CONSTRUCTING PANEL PANES GIRD...");
+
       // Construct the absolute best grid layout using Dockview splits!
       const workspacesPanel = dockviewInstance.addPanel({
         id: 'workspaces',
@@ -111,6 +115,8 @@
       // Set initial panel sizing (Left workspaces: 18%, Settings: 24%)
       workspacesPanel.group.api.setSize(220);
       settingsPanel.group.api.setSize(340);
+
+      console.log("DOCKVIEW WORKSPACE SECURED!");
     }
 
     return () => {
@@ -158,8 +164,8 @@
     </div>
   </header>
 
-  <!-- Root Tiling Container -->
-  <main class="pane-container" bind:this={dockviewContainer}></main>
+  <!-- Root Tiling Container (with Dockview Dark Theme Class) -->
+  <main class="pane-container dockview-theme-dark" bind:this={dockviewContainer}></main>
 </div>
 
 <style>
@@ -263,14 +269,12 @@
     font-weight: bold;
   }
 
-  /* Pane Split Tiling container */
+  /* Robust, non-collapsing Pane Split Container for Dockview */
   .pane-container {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
     position: relative;
     width: 100%;
-    height: 100%;
+    height: calc(100vh - 58px); /* explicit height avoids flexbox collapses */
+    overflow: hidden;
     box-sizing: border-box;
   }
 
