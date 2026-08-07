@@ -1344,13 +1344,6 @@
           ctx.moveTo(mouseCSSX, mouseCSSY);
           ctx.lineTo(pNode.projX, pNode.projY);
           ctx.stroke();
-
-          // Green ring to indicate hit
-          ctx.strokeStyle = '#22c55e';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(pNode.projX, pNode.projY, pNode.projRadius + 4, 0, Math.PI * 2);
-          ctx.stroke();
         }
       }
 

@@ -25,6 +25,13 @@
     }
   });
 
+  // Watch selectedNode changes and sync down to the 2D renderer in real-time
+  $effect(() => {
+    if (workspaceState.renderer) {
+      workspaceState.renderer.setSelectedNodeId(workspaceState.selectedNode?.id ?? null);
+    }
+  });
+
   // Watch physicsSettings changes and sync them
   $effect(() => {
     if (workspaceState.renderer && workspaceState.physicsSettings) {
