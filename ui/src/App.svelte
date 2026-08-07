@@ -1,7 +1,22 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, mount, unmount } from 'svelte';
   import { workspaceState } from './lib/workspaceState.svelte.js';
-  import LayoutNode from './lib/LayoutNode.svelte';
+  import { DockviewComponent } from 'dockview-core';
+
+  // Import Dockview core CSS styling
+  import 'dockview-core/dist/styles/dockview.css';
+
+  // Import our Svelte views
+  import HCypherEditor from './lib/HCypherEditor.svelte';
+  import View2D from './lib/View2D.svelte';
+  import View3D from './lib/View3D.svelte';
+  import WorkspacesView from './lib/WorkspacesView.svelte';
+  import SSRSimulatorView from './lib/SSRSimulatorView.svelte';
+  import DevToolsView from './lib/DevToolsView.svelte';
+  import PhysicsSettingsView from './lib/PhysicsSettingsView.svelte';
+
+  let dockviewContainer = $state<HTMLDivElement | null>(null);
+  let dockviewInstance: DockviewComponent | null = null;
 
   onMount(() => {
     // Simulate minor FPS fluctuation and shared memory state activity
@@ -10,8 +25,99 @@
       workspaceState.wasmMemoryUsage = parseFloat((128.4 + Math.sin(Date.now() / 1000) * 2).toFixed(2));
     }, 1000);
 
+    if (dockviewContainer) {
+      // Instantiate high-performance vanilla dockview-core engine
+      dockviewInstance = new DockviewComponent({
+        container: dockviewContainer,
+        createComponent: (options) => {
+          const wrapper = document.createElement('div');
+          wrapper.style.width = '100%';
+          wrapper.style.height = '100%';
+          wrapper.style.overflow = 'hidden';
+          wrapper.style.boxSizing = 'border-box';
+          
+          let svelteInstance: any = null;
+          
+          // Dynamically mount Svelte 5 viewports with reactive props bound
+          if (options.name === 'editor') {
+            svelteInstance = mount(HCypherEditor, {
+              target: wrapper,
+              props: {
+                get value() { return workspaceState.hCypherCode; },
+                set value(v) { workspaceState.hCypherCode = v; },
+                get bgColor() { return workspaceState.currentBgColor; }
+              }
+            });
+          } else if (options.name === 'canvas') {
+            svelteInstance = mount(View2D, { target: wrapper });
+          } else if (options.name === 'projection3d') {
+            svelteInstance = mount(View3D, { target: wrapper });
+          } else if (options.name === 'workspaces') {
+            svelteInstance = mount(WorkspacesView, { target: wrapper });
+          } else if (options.name === 'physics_settings') {
+            svelteInstance = mount(PhysicsSettingsView, { target: wrapper });
+          } else if (options.name === 'ssr_simulator') {
+            svelteInstance = mount(SSRSimulatorView, { target: wrapper });
+          } else if (options.name === 'dev_tools') {
+            svelteInstance = mount(DevToolsView, { target: wrapper });
+          }
+          
+          return {
+            element: wrapper,
+            dispose: () => {
+              if (svelteInstance) {
+                unmount(svelteInstance);
+              }
+            }
+          };
+        }
+      });
+
+      // Construct the absolute best grid layout using Dockview splits!
+      const workspacesPanel = dockviewInstance.addPanel({
+        id: 'workspaces',
+        component: 'workspaces',
+        title: 'Workspaces List'
+      });
+
+      const editorPanel = dockviewInstance.addPanel({
+        id: 'editor',
+        component: 'editor',
+        title: 'H-Cypher Editor',
+        position: { referencePanel: workspacesPanel, direction: 'right' }
+      });
+
+      const canvasPanel = dockviewInstance.addPanel({
+        id: 'canvas',
+        component: 'canvas',
+        title: '2D Hypergraph',
+        position: { referencePanel: editorPanel, direction: 'below' }
+      });
+
+      const view3dPanel = dockviewInstance.addPanel({
+        id: 'projection3d',
+        component: 'projection3d',
+        title: '3D Projection',
+        position: { referencePanel: canvasPanel, direction: 'right' }
+      });
+
+      const settingsPanel = dockviewInstance.addPanel({
+        id: 'physics_settings',
+        component: 'physics_settings',
+        title: 'Simulation Settings',
+        position: { referencePanel: view3dPanel, direction: 'right' }
+      });
+
+      // Set initial panel sizing (Left workspaces: 18%, Settings: 24%)
+      workspacesPanel.group.api.setSize(220);
+      settingsPanel.group.api.setSize(340);
+    }
+
     return () => {
       clearInterval(fpsInterval);
+      if (dockviewInstance) {
+        dockviewInstance.dispose();
+      }
     };
   });
 </script>
@@ -22,7 +128,7 @@
     <div class="logo-area">
       <span class="pulse-dot"></span>
       <span class="title">RACOCI Holds Substrate</span>
-      <span class="sub-title">Blender-Inspired Workspace Manager</span>
+      <span class="sub-title">VSCode-Grade Docking Workspace Manager</span>
     </div>
     
     <!-- Real-time Status Telemetry indicators -->
@@ -53,9 +159,7 @@
   </header>
 
   <!-- Root Tiling Container -->
-  <main class="pane-container">
-    <LayoutNode node={workspaceState.layoutTree} />
-  </main>
+  <main class="pane-container" bind:this={dockviewContainer}></main>
 </div>
 
 <style>
@@ -186,5 +290,37 @@
 
   .bg-select:focus {
     border-color: #66fcf1;
+  }
+
+  /* Core Dockview Cyber Dark Custom Theme Variables Overrides */
+  :global(.dockview) {
+    --dv-active-tab-background-color: #121420 !important;
+    --dv-active-tab-color: #66fcf1 !important;
+    --dv-inactive-tab-background-color: #0a0b12 !important;
+    --dv-inactive-tab-color: #45a29e !important;
+    --dv-separator-color: #1f2833 !important;
+    --dv-tabs-and-actions-container-background-color: #07080d !important;
+    --dv-active-group-visible-tab-border-color: #66fcf1 !important;
+    font-family: "Fira Code", monospace !important;
+  }
+
+  :global(.dv-tab) {
+    border-top: 2px solid transparent;
+    transition: all 0.15s ease-in-out;
+  }
+
+  :global(.dv-tab.active) {
+    border-top: 2px solid #66fcf1 !important;
+    background-color: #141829 !important;
+    text-shadow: 0 0 4px rgba(102, 252, 241, 0.5);
+  }
+
+  :global(.dv-tab:hover) {
+    color: #ffffff !important;
+    background-color: rgba(255, 255, 255, 0.02) !important;
+  }
+
+  :global(.dv-group) {
+    border: 1px solid rgba(255, 255, 255, 0.01) !important;
   }
 </style>
