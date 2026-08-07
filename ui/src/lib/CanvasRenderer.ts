@@ -108,6 +108,7 @@ export class CanvasRenderer {
 
   public setSelectedNodeId(id: string | null) {
     this.selectedNodeId = id;
+    this.render(); // force instant repaint frame on selection sync!
   }
 
   /**

@@ -9,33 +9,41 @@
 
   // Watch parsing result to update the canvas topology
   $effect(() => {
-    if (workspaceState.renderer && workspaceState.parseResult) {
-      workspaceState.renderer.updateTopology(
-        workspaceState.parseResult.nodes,
-        workspaceState.parseResult.edges,
-        workspaceState.parseResult.membranes
+    const renderer = workspaceState.renderer;
+    const parseResult = workspaceState.parseResult;
+    if (renderer && parseResult) {
+      renderer.updateTopology(
+        parseResult.nodes,
+        parseResult.edges,
+        parseResult.membranes
       );
     }
   });
 
   // Watch background color change
   $effect(() => {
-    if (workspaceState.renderer && workspaceState.currentBgColor) {
-      workspaceState.renderer.setBackgroundColor(workspaceState.currentBgColor);
+    const renderer = workspaceState.renderer;
+    const bgColor = workspaceState.currentBgColor;
+    if (renderer && bgColor) {
+      renderer.setBackgroundColor(bgColor);
     }
   });
 
   // Watch selectedNode changes and sync down to the 2D renderer in real-time
   $effect(() => {
-    if (workspaceState.renderer) {
-      workspaceState.renderer.setSelectedNodeId(workspaceState.selectedNode?.id ?? null);
+    const renderer = workspaceState.renderer;
+    const activeNodeId = workspaceState.selectedNode?.id ?? null;
+    if (renderer) {
+      renderer.setSelectedNodeId(activeNodeId);
     }
   });
 
   // Watch physicsSettings changes and sync them
   $effect(() => {
-    if (workspaceState.renderer && workspaceState.physicsSettings) {
-      workspaceState.renderer.physicsSettings = workspaceState.physicsSettings;
+    const renderer = workspaceState.renderer;
+    const settings = workspaceState.physicsSettings;
+    if (renderer && settings) {
+      renderer.physicsSettings = settings;
     }
   });
 
