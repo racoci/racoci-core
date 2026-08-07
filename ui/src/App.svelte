@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, mount, unmount } from 'svelte';
   import { workspaceState } from './lib/workspaceState.svelte.js';
-  import { DockviewComponent } from 'dockview-core';
+  import { DockviewComponent } from 'dockview';
 
-  // Import Dockview core CSS styling
-  import 'dockview-core/dist/styles/dockview.css';
+  // Import recommended Dockview CSS styling
+  import 'dockview/dist/styles/dockview.css';
 
   // Import our Svelte views
   import HCypherEditor from './lib/HCypherEditor.svelte';
@@ -28,8 +28,8 @@
     if (dockviewContainer) {
       console.log("INITIALIZING DOCKVIEW COMPONENT...");
       
-      // Instantiate high-performance vanilla dockview-core engine with correct signature:
-      // new DockviewComponent(element, options)
+      // Instantiate high-performance vanilla Dockview engine
+      // Constructor signature: new DockviewComponent(element, options)
       dockviewInstance = new DockviewComponent(dockviewContainer, {
         createComponent: (options) => {
           const wrapper = document.createElement('div');
@@ -40,42 +40,56 @@
           
           let svelteInstance: any = null;
           
-          // Dynamically mount Svelte 5 viewports with reactive props bound
-          if (options.name === 'editor') {
-            svelteInstance = mount(HCypherEditor, {
-              target: wrapper,
-              props: {
-                get value() { return workspaceState.hCypherCode; },
-                set value(v) { workspaceState.hCypherCode = v; },
-                get bgColor() { return workspaceState.currentBgColor; }
-              }
-            });
-          } else if (options.name === 'canvas') {
-            svelteInstance = mount(View2D, { target: wrapper });
-          } else if (options.name === 'projection3d') {
-            svelteInstance = mount(View3D, { target: wrapper });
-          } else if (options.name === 'workspaces') {
-            svelteInstance = mount(WorkspacesView, { target: wrapper });
-          } else if (options.name === 'physics_settings') {
-            svelteInstance = mount(PhysicsSettingsView, { target: wrapper });
-          } else if (options.name === 'ssr_simulator') {
-            svelteInstance = mount(SSRSimulatorView, { target: wrapper });
-          } else if (options.name === 'dev_tools') {
-            svelteInstance = mount(DevToolsView, { target: wrapper });
-          }
-          
+          // Return a fully compliant IContentRenderer object to satisfy Dockview's lifecycle contract!
           return {
             element: wrapper,
+            init: (params) => {
+              // Dynamically mount the Svelte 5 component inside init once the container is fully ready!
+              if (options.name === 'editor') {
+                svelteInstance = mount(HCypherEditor, {
+                  target: wrapper,
+                  props: {
+                    get value() { return workspaceState.hCypherCode; },
+                    set value(v) { workspaceState.hCypherCode = v; },
+                    get bgColor() { return workspaceState.currentBgColor; }
+                  }
+                });
+              } else if (options.name === 'canvas') {
+                svelteInstance = mount(View2D, { target: wrapper });
+              } else if (options.name === 'projection3d') {
+                svelteInstance = mount(View3D, { target: wrapper });
+              } else if (options.name === 'workspaces') {
+                svelteInstance = mount(WorkspacesView, { target: wrapper });
+              } else if (options.name === 'physics_settings') {
+                svelteInstance = mount(PhysicsSettingsView, { target: wrapper });
+              } else if (options.name === 'ssr_simulator') {
+                svelteInstance = mount(SSRSimulatorView, { target: wrapper });
+              } else if (options.name === 'dev_tools') {
+                svelteInstance = mount(DevToolsView, { target: wrapper });
+              }
+            },
+            update: (params) => {
+              // Handle reactive parameter updates if needed
+            },
+            layout: (width, height) => {
+              // Handle container resizes
+            },
+            focus: () => {
+              wrapper.focus();
+            },
             dispose: () => {
               if (svelteInstance) {
                 unmount(svelteInstance);
               }
+            },
+            toJSON: () => {
+              return {};
             }
           };
         }
       });
 
-      console.log("CONSTRUCTING PANEL PANES GIRD...");
+      console.log("CONSTRUCTING PANEL PANES GRID...");
 
       // Construct the absolute best grid layout using Dockview splits!
       const workspacesPanel = dockviewInstance.addPanel({

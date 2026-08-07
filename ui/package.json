@@ -20,6 +20,6 @@
     "vite": "^8.1.1"
   },
   "dependencies": {
-    "dockview-core": "^7.0.4"
+    "dockview": "^7.0.4"
   }
 }
