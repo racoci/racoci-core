@@ -54,7 +54,7 @@
       <div class="control-group">
         <label for="atom-mass-slider" class="control-label">
           <span>Atom Inertia (M_atom)</span>
-          <span class="control-val text-yellow">{workspaceState.physicsSettings.masses.atom.toFixed(1)} kg</span>
+          <span class="control-val text-yellow">{(workspaceState.physicsSettings?.masses?.atom ?? 1.0).toFixed(1)} kg</span>
         </label>
         <input 
           id="atom-mass-slider"
@@ -72,7 +72,7 @@
       <div class="control-group">
         <label for="seg-mass-slider" class="control-label">
           <span>Segment Inertia (M_segment)</span>
-          <span class="control-val text-pink">{workspaceState.physicsSettings.masses.segment.toFixed(2)} kg</span>
+          <span class="control-val text-pink">{(workspaceState.physicsSettings?.masses?.segment ?? 0.25).toFixed(2)} kg</span>
         </label>
         <input 
           id="seg-mass-slider"
@@ -95,7 +95,7 @@
       <div class="control-group">
         <label for="atom-atom-slider" class="control-label">
           <span>Atom-to-Atom Separation</span>
-          <span class="control-val text-yellow">{workspaceState.physicsSettings.forces.atom_atom}</span>
+          <span class="control-val text-yellow">{workspaceState.physicsSettings?.forces?.atom_atom ?? 1500}</span>
         </label>
         <input 
           id="atom-atom-slider"
@@ -113,7 +113,7 @@
       <div class="control-group">
         <label for="atom-seg-slider" class="control-label">
           <span>Atom-to-Segment Repulsion</span>
-          <span class="control-val text-cyan">{workspaceState.physicsSettings.forces.atom_nonSuccessive}</span>
+          <span class="control-val text-cyan">{workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150}</span>
         </label>
         <input 
           id="atom-seg-slider"
@@ -131,7 +131,7 @@
       <div class="control-group">
         <label for="seg-seg-slider" class="control-label">
           <span>Highway Separation</span>
-          <span class="control-val text-purple">{workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive}</span>
+          <span class="control-val text-purple">{workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180}</span>
         </label>
         <input 
           id="seg-seg-slider"
@@ -149,7 +149,7 @@
       <div class="control-group">
         <label for="tension-slider" class="control-label">
           <span>String Elastic Tension</span>
-          <span class="control-val text-pink">{workspaceState.physicsSettings.forces.successive_tension.toFixed(2)}</span>
+          <span class="control-val text-pink">{(workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16).toFixed(2)}</span>
         </label>
         <input 
           id="tension-slider"
@@ -167,7 +167,7 @@
       <div class="control-group">
         <label for="strain-max-slider" class="control-label">
           <span>Strain Max (Spawn Segments)</span>
-          <span class="control-val text-cyan">{workspaceState.physicsSettings.forces.strain_max.toFixed(1)}</span>
+          <span class="control-val text-cyan">{(workspaceState.physicsSettings?.forces?.strain_max ?? 10.0).toFixed(1)}</span>
         </label>
         <input 
           id="strain-max-slider"
@@ -185,7 +185,7 @@
       <div class="control-group">
         <label for="strain-min-slider" class="control-label">
           <span>Strain Min (Prune Segments)</span>
-          <span class="control-val text-yellow">{workspaceState.physicsSettings.forces.strain_min.toFixed(1)}</span>
+          <span class="control-val text-yellow">{(workspaceState.physicsSettings?.forces?.strain_min ?? 2.0).toFixed(1)}</span>
         </label>
         <input 
           id="strain-min-slider"
