@@ -1,35 +1,142 @@
 <!-- PhysicsSettingsView.svelte (Svelte 5) -->
 <script lang="ts">
   import { workspaceState } from './workspaceState.svelte.js';
+
+  let dragKnobId = $state<string | null>(null);
+  let startY = 0;
+  let startVal = 0;
+
+  // Symmetrical 3x3 Category Matrix configurations
+  // Rows/Cols represent the categories: ATOM, SEGMENT (Non-successive), TENSION (Successive)
+  const matrixCells = $derived([
+    {
+      row: 0, col: 0,
+      id: 'atom_atom',
+      label: 'Atom-Atom',
+      desc: 'Atom separation',
+      get value() { return workspaceState.physicsSettings?.forces?.atom_atom ?? 1500; },
+      set value(v) { workspaceState.physicsSettings.forces.atom_atom = Math.round(v); },
+      min: 0,
+      max: 3000,
+    },
+    {
+      row: 0, col: 1,
+      id: 'atom_segment',
+      label: 'Atom-Segment',
+      desc: 'Obstacle avoidance',
+      get value() { return workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150; },
+      set value(v) { workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(v); },
+      min: 0,
+      max: 1000,
+    },
+    {
+      row: 1, col: 0,
+      id: 'segment_atom', // Mirrors row 0, col 1
+      label: 'Segment-Atom',
+      desc: 'Obstacle avoidance',
+      get value() { return workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150; },
+      set value(v) { workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(v); },
+      min: 0,
+      max: 1000,
+    },
+    {
+      row: 1, col: 1,
+      id: 'segment_segment',
+      label: 'Segment-Segment',
+      desc: 'Highway separation',
+      get value() { return workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180; },
+      set value(v) { workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive = Math.round(v); },
+      min: 0,
+      max: 1000,
+    },
+    {
+      row: 2, col: 2,
+      id: 'successive_tension',
+      label: 'Tension-Tension',
+      desc: 'Successive joint pull',
+      get value() { return workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16; },
+      set value(v) { workspaceState.physicsSettings.forces.successive_tension = parseFloat(v.toFixed(3)); },
+      min: 0.01,
+      max: 0.50,
+    }
+  ]);
+
+  // Click-drag gesture event handlers for the rotatable knobs
+  function startDrag(e: MouseEvent, knobId: string, currentVal: number) {
+    e.preventDefault();
+    dragKnobId = knobId;
+    startY = e.clientY;
+    startVal = currentVal;
+    window.addEventListener('mousemove', handleDrag);
+    window.addEventListener('mouseup', stopDrag);
+  }
+
+  function handleDrag(e: MouseEvent) {
+    if (!dragKnobId) return;
+    const cell = matrixCells.find(c => c.id === dragKnobId);
+    if (!cell) return;
+
+    const deltaY = startY - e.clientY; // Dragging UP increases value
+    const range = cell.max - cell.min;
+    
+    // Scale drag sensitivity (200px drag for full range)
+    let newVal = startVal + (deltaY / 200) * range;
+    newVal = Math.max(cell.min, Math.min(cell.max, newVal));
+    
+    cell.value = newVal;
+    
+    // Force Svelte 5 global reactivity trigger!
+    workspaceState.physicsSettings = { ...workspaceState.physicsSettings };
+  }
+
+  function stopDrag() {
+    dragKnobId = null;
+    window.removeEventListener('mousemove', handleDrag);
+    window.removeEventListener('mouseup', stopDrag);
+  }
+
+  // Intense Red (0%) -> Grey (50%) -> Intense Green (100%) linear RGB interpolation
+  function getKnobColor(val: number, min: number, max: number): string {
+    const pct = (val - min) / (max - min || 1);
+    const r = Math.round((1 - pct) * 244 + pct * 0);
+    const g = Math.round((1 - pct) * 63 + pct * 255);
+    const b = Math.round((1 - pct) * 94 + pct * 204);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  // Find cell by row/col coordinates
+  function getCellAt(row: number, col: number) {
+    return matrixCells.find(c => c.row === row && c.col === col) || null;
+  }
 </script>
 
 <div class="physics-settings-container">
   <div class="settings-header">
     <span class="settings-title">CYBERNETIC SIMULATOR</span>
-    <span class="settings-badge">SANDBOX v1.0</span>
+    <span class="settings-badge">SANDBOX v1.2</span>
   </div>
 
   <div class="settings-body">
     <!-- Section 1: Vertex Count Constraints -->
     <div class="settings-section">
-      <span class="section-heading">Elastic Segments</span>
+      <span class="section-heading">Elastic Segments Resolution</span>
       
       <div class="control-group">
         <label for="max-pts-slider" class="control-label">
           <span>Max Intermediates</span>
-          <span class="control-val">{workspaceState.physicsSettings.maxIntermediatePoints} nodes</span>
+          <span class="control-val">{workspaceState.physicsSettings?.maxIntermediatePoints ?? 5} nodes</span>
         </label>
         <input 
           id="max-pts-slider"
           type="range" 
-          min="0" 
-          max="10" 
+          min="1" 
+          max="15" 
           step="1" 
           bind:value={workspaceState.physicsSettings.maxIntermediatePoints} 
           oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider"
         />
-        <span class="control-desc">Limits vertices per edge to prevent performance degradation on large files.</span>
+        <span class="control-desc">Limits vertices per edge to prevent performance degradation. (Forcing at least 1 point for joints visibility!)</span>
       </div>
 
       <div class="control-group checkbox-group">
@@ -91,122 +198,88 @@
       </div>
     </div>
 
-    <!-- Section 2: Force-Directed Matrix Configuration -->
+    <!-- Section 2: Symmetrical 3x3 Category Force Matrix -->
     <div class="settings-section">
-      <span class="section-heading">Interaction Matrix</span>
+      <span class="section-heading">Symmetrical Force Matrix</span>
+      <span class="control-desc header-desc">Click and drag up/down on any knob below to alter the force between categories. Symmetrical coordinates are automatically synchronized!</span>
 
-      <!-- Force 1: Atoms Repulsion -->
-      <div class="control-group">
-        <label for="atom-atom-slider" class="control-label">
-          <span>Atom-to-Atom Separation</span>
-          <span class="control-val text-yellow">{workspaceState.physicsSettings?.forces?.atom_atom ?? 1500}</span>
-        </label>
-        <input 
-          id="atom-atom-slider"
-          type="range" 
-          min="200" 
-          max="3000" 
-          step="50" 
-          bind:value={workspaceState.physicsSettings.forces.atom_atom} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-yellow"
-        />
-        <span class="control-desc">Repulsion force separating parsed graph atoms. Higher values space out clusters.</span>
-      </div>
+      <div class="matrix-grid-container">
+        <!-- Matrix Header Row -->
+        <div class="matrix-row headers-row">
+          <div class="matrix-header-cell corner-cell"></div>
+          <div class="matrix-header-cell">ATOM</div>
+          <div class="matrix-header-cell">SEGMENT</div>
+          <div class="matrix-header-cell">TENSION</div>
+        </div>
 
-      <!-- Force 2: Atom-to-Segment Repulsion -->
-      <div class="control-group">
-        <label for="atom-seg-slider" class="control-label">
-          <span>Atom-to-Segment Repulsion</span>
-          <span class="control-val text-cyan">{workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150}</span>
-        </label>
-        <input 
-          id="atom-seg-slider"
-          type="range" 
-          min="20" 
-          max="1000" 
-          step="10" 
-          bind:value={workspaceState.physicsSettings.forces.atom_nonSuccessive} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-cyan"
-        />
-        <span class="control-desc">Mass-adjusted repulsion force pushing edge segments away from node borders.</span>
-      </div>
+        <!-- 3x3 Symmetrical Matrix Body Rows -->
+        {#each ['ATOM', 'SEGMENT', 'TENSION'] as rowLabel, rIdx}
+          <div class="matrix-row">
+            <div class="matrix-row-header-cell">{rowLabel}</div>
+            
+            {#each [0, 1, 2] as cIdx}
+              {@const cell = getCellAt(rIdx, cIdx)}
 
-      <!-- Force 3: Segment-to-Segment Repulsion -->
-      <div class="control-group">
-        <label for="seg-seg-slider" class="control-label">
-          <span>Highway Separation</span>
-          <span class="control-val text-purple">{workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180}</span>
-        </label>
-        <input 
-          id="seg-seg-slider"
-          type="range" 
-          min="20" 
-          max="1000" 
-          step="10" 
-          bind:value={workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-purple"
-        />
-        <span class="control-desc">Repulsion between non-successive intermediate points. Promotes parallel edge routing.</span>
-      </div>
+              {#if cell}
+                {@const pct = (cell.value - cell.min) / (cell.max - cell.min || 1)}
+                {@const angle = -140 + pct * 280}
+                {@const activeColor = getKnobColor(cell.value, cell.min, cell.max)}
 
-      <!-- Force 4: Elastic Spring Tension -->
-      <div class="control-group">
-        <label for="tension-slider" class="control-label">
-          <span>String Elastic Tension</span>
-          <span class="control-val text-pink">{(workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16).toFixed(2)}</span>
-        </label>
-        <input 
-          id="tension-slider"
-          type="range" 
-          min="0.01" 
-          max="0.50" 
-          step="0.01" 
-          bind:value={workspaceState.physicsSettings.forces.successive_tension} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-pink"
-        />
-        <span class="control-desc">Elastic tension between consecutive segments. High values pull strings straight.</span>
-      </div>
+                <!-- Active Knob Cell -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div 
+                  class="matrix-cell active-knob-cell"
+                  onmousedown={(e) => startDrag(e, cell.id, cell.value)}
+                  class:dragging={dragKnobId === cell.id}
+                  title="{cell.desc} ({cell.min} to {cell.max})"
+                >
+                  <div class="mini-knob-container">
+                    <svg width="40" height="40" viewBox="0 0 40 40" class="knob-svg">
+                      <!-- Circular background -->
+                      <circle cx="20" cy="20" r="16" fill="#04060d" stroke="#1f2833" stroke-width="1.5" />
+                      
+                      <!-- Glowing value arc -->
+                      <circle 
+                        cx="20" 
+                        cy="20" 
+                        r="16" 
+                        fill="none" 
+                        stroke={activeColor} 
+                        stroke-width="2.2" 
+                        stroke-linecap="round"
+                        stroke-dasharray="80"
+                        stroke-dashoffset={80 - (80 * pct)}
+                        transform="rotate(-230, 20, 20)"
+                      />
 
-      <!-- Threshold 1: Strain Max (Spawn Nodes) -->
-      <div class="control-group">
-        <label for="strain-max-slider" class="control-label">
-          <span>Strain Max (Spawn Segments)</span>
-          <span class="control-val text-cyan">{(workspaceState.physicsSettings?.forces?.strain_max ?? 10.0).toFixed(1)}</span>
-        </label>
-        <input 
-          id="strain-max-slider"
-          type="range" 
-          min="5.0" 
-          max="40.0" 
-          step="1.0" 
-          bind:value={workspaceState.physicsSettings.forces.strain_max} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-cyan"
-        />
-        <span class="control-desc">If average segment force exceeds this limit, new intermediate segments spawn to relieve tension.</span>
-      </div>
+                      <!-- Needle -->
+                      <line 
+                        x1="20" 
+                        y1="20" 
+                        x2="20" 
+                        y2="6" 
+                        stroke="#ffffff" 
+                        stroke-width="2.5" 
+                        stroke-linecap="round"
+                        transform="rotate({angle}, 20, 20)"
+                      />
+                    </svg>
+                  </div>
 
-      <!-- Threshold 2: Strain Min (Prune Nodes) -->
-      <div class="control-group">
-        <label for="strain-min-slider" class="control-label">
-          <span>Strain Min (Prune Segments)</span>
-          <span class="control-val text-yellow">{(workspaceState.physicsSettings?.forces?.strain_min ?? 2.0).toFixed(1)}</span>
-        </label>
-        <input 
-          id="strain-min-slider"
-          type="range" 
-          min="0.5" 
-          max="15.0" 
-          step="0.5" 
-          bind:value={workspaceState.physicsSettings.forces.strain_min} 
-          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
-          class="cyber-slider slider-yellow"
-        />
-        <span class="control-desc">If average segment force drops below this limit (too relaxed), extra segments are deleted to prevent curling.</span>
+                  <div class="knob-value-badge" style="color: {activeColor}; text-shadow: 0 0 6px {activeColor}44">
+                    {cell.value.toFixed(cell.id === 'successive_tension' ? 3 : 0)}
+                  </div>
+                </div>
+              {:else}
+                <!-- Symmetrically uncoupled / N/A category cell -->
+                <div class="matrix-cell na-cell" title="Symmetrically uncoupled categories">
+                  <div class="na-ring"></div>
+                  <span class="na-text">N/A</span>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/each}
       </div>
     </div>
   </div>
@@ -304,9 +377,11 @@
     line-height: 1.2;
   }
 
+  .header-desc {
+    margin-bottom: 6px;
+  }
+
   .text-yellow { color: #facc15; }
-  .text-cyan { color: #66fcf1; }
-  .text-purple { color: #c084fc; }
   .text-pink { color: #f43f5e; }
 
   /* Cyber Sliders styling */
@@ -327,15 +402,10 @@
     height: 10px;
     border-radius: 50%;
     cursor: pointer;
+    background: #66fcf1;
+    box-shadow: 0 0 6px #66fcf1;
     transition: transform 0.1s ease-in-out;
   }
-
-  /* Slider colors thumb */
-  .slider-yellow::-webkit-slider-thumb { background: #facc15; box-shadow: 0 0 6px #facc15; }
-  .slider-cyan::-webkit-slider-thumb { background: #66fcf1; box-shadow: 0 0 6px #66fcf1; }
-  .slider-purple::-webkit-slider-thumb { background: #a855f7; box-shadow: 0 0 6px #a855f7; }
-  .slider-pink::-webkit-slider-thumb { background: #f43f5e; box-shadow: 0 0 6px #f43f5e; }
-  .cyber-slider::-webkit-slider-thumb { background: #66fcf1; box-shadow: 0 0 6px #66fcf1; }
 
   /* Checkbox styling */
   .checkbox-group {
@@ -383,5 +453,116 @@
     border: solid #66fcf1;
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
+  }
+
+  /* 3x3 Symmetrical Force Matrix Styling */
+  .matrix-grid-container {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background-color: #03050c;
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    padding: 10px;
+  }
+
+  .matrix-row {
+    display: grid;
+    grid-template-columns: 80px repeat(3, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .headers-row {
+    border-bottom: 1px solid rgba(102, 252, 241, 0.1);
+    padding-bottom: 6px;
+  }
+
+  .matrix-header-cell {
+    font-size: 7.5px;
+    font-weight: bold;
+    color: #66fcf1;
+    text-align: center;
+    letter-spacing: 0.5px;
+  }
+
+  .matrix-row-header-cell {
+    font-size: 7.5px;
+    font-weight: bold;
+    color: #a855f7;
+    letter-spacing: 0.5px;
+    text-align: left;
+    padding-left: 4px;
+  }
+
+  .matrix-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(10, 14, 26, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+    padding: 6px;
+    height: 64px;
+    box-sizing: border-box;
+    transition: background-color 0.1s ease-in-out, border-color 0.1s ease-in-out;
+  }
+
+  .active-knob-cell {
+    cursor: grab;
+  }
+
+  .active-knob-cell:hover {
+    background-color: rgba(15, 22, 42, 0.8);
+    border-color: rgba(102, 252, 241, 0.15);
+  }
+
+  .active-knob-cell.dragging {
+    cursor: grabbing;
+    background-color: rgba(15, 22, 42, 0.95);
+    border-color: #66fcf1;
+    box-shadow: 0 0 8px rgba(102, 252, 241, 0.1);
+  }
+
+  .mini-knob-container {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 2px;
+  }
+
+  .knob-svg {
+    filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.5));
+  }
+
+  .knob-value-badge {
+    font-size: 9px;
+    font-weight: bold;
+    font-family: inherit;
+    text-align: center;
+  }
+
+  /* N/A (Symmetrically uncoupled) Cells styling */
+  .na-cell {
+    opacity: 0.25;
+    background-color: rgba(0, 0, 0, 0.2);
+    border-style: dashed;
+  }
+
+  .na-ring {
+    width: 24px;
+    height: 24px;
+    border: 1px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    margin-bottom: 4px;
+  }
+
+  .na-text {
+    font-size: 7.5px;
+    color: #45a29e;
+    font-weight: bold;
   }
 </style>
