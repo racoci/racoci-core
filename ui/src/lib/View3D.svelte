@@ -542,67 +542,50 @@
               }
             }
 
-            // (B) Proportional 2-second (120 frames) re-sampling to add/remove points on stretch in 3D
+            // (B & C) Dynamic Force-Based Re-sampling (Spawn/Prune segments in 3D)
+            // Evaluate every 120 frames (2 seconds) to keep simulation stable
             if (frameCount % 120 === 0 && n1 && n2) {
-              const dx_3d = n2.x - n1.x;
-              const dy_3d = n2.y - n1.y;
-              const dz_3d = n2.z - n1.z;
-              const dist_3d = Math.sqrt(dx_3d*dx_3d + dy_3d*dy_3d + dz_3d*dz_3d) || 1;
-              const desiredNumPoints = Math.min(
-                workspaceState.physicsSettings.maxIntermediatePoints, 
-                Math.max(0, Math.floor(dist_3d / 45) - 1)
-              );
-              
-              if (desiredNumPoints !== edge3d.points.length) {
-                if (desiredNumPoints < edge3d.points.length) {
-                  edge3d.points = edge3d.points.slice(0, desiredNumPoints);
-                } else {
-                  const diff = desiredNumPoints - edge3d.points.length;
-                  const lastPt = edge3d.points[edge3d.points.length - 1] || n1;
-                  for (let i = 1; i <= diff; i++) {
-                    const t = i / (diff + 1);
-                    edge3d.points.push({
-                      x: lastPt.x + (n2.x - lastPt.x) * t,
-                      y: lastPt.y + (n2.y - lastPt.y) * t,
-                      z: lastPt.z + (n2.z - lastPt.z) * t,
-                      vx: 0, vy: 0, vz: 0
-                    });
-                  }
-                }
+              const currentN = edge3d.points.length;
+              let totalStrain = 0;
+              for (let k = 0; k <= currentN; k++) {
+                const pt_prev = edge3d.points[k - 1];
+                const pt_curr = edge3d.points[k];
+
+                const ax = (k === 0) ? n1.x : (pt_prev ? pt_prev.x : n1.x);
+                const ay = (k === 0) ? n1.y : (pt_prev ? pt_prev.y : n1.y);
+                const az = (k === 0) ? n1.z : (pt_prev ? pt_prev.z : n1.z);
+
+                const bx = (k === currentN) ? n2.x : (pt_curr ? pt_curr.x : n2.x);
+                const by = (k === currentN) ? n2.y : (pt_curr ? pt_curr.y : n2.y);
+                const bz = (k === currentN) ? n2.z : (pt_curr ? pt_curr.z : n2.z);
+
+                const d = Math.sqrt((bx - ax)**2 + (by - ay)**2 + (bz - az)**2) || 1;
+                totalStrain += Math.abs(d - segmentRestLen);
               }
-            }
+              const avgStrain = totalStrain / (currentN + 1);
 
-            // (C) Strain-adaptive decimation (prune intermediate points under low tension/strain in 3D)
-            const currentN = edge3d.points.length;
-            let totalStrain = 0;
-            for (let k = 0; k <= currentN; k++) {
-              const pt_prev = edge3d.points[k - 1];
-              const pt_curr = edge3d.points[k];
+              const strainMin = workspaceState.physicsSettings.forces.strain_min ?? 2.0;
+              const strainMax = workspaceState.physicsSettings.forces.strain_max ?? 10.0;
+              const maxPts = workspaceState.physicsSettings.maxIntermediatePoints ?? 5;
 
-              const ax = (k === 0) ? n1.x : (pt_prev ? pt_prev.x : n1.x);
-              const ay = (k === 0) ? n1.y : (pt_prev ? pt_prev.y : n1.y);
-              const az = (k === 0) ? n1.z : (pt_prev ? pt_prev.z : n1.z);
-
-              const bx = (k === currentN) ? n2.x : (pt_curr ? pt_curr.x : n2.x);
-              const by = (k === currentN) ? n2.y : (pt_curr ? pt_curr.y : n2.y);
-              const bz = (k === currentN) ? n2.z : (pt_curr ? pt_curr.z : n2.z);
-
-              const d = Math.sqrt((bx - ax)**2 + (by - ay)**2 + (bz - az)**2) || 1;
-              totalStrain += Math.abs(d - segmentRestLen);
-            }
-            const avgStrain = totalStrain / (currentN + 1);
-
-            if (avgStrain < 8.0) { // threshold of low strain (nearly relaxed/straight)
-              if (edge.isNewTicks === undefined) edge.isNewTicks = 0;
-              edge.isNewTicks++;
-              if (edge.isNewTicks > 60) { // low strain for > 1 second
+              if (avgStrain < strainMin) {
+                // Too relaxed (force below min threshold): Prune a segment
                 if (edge3d.points.length > 0) {
-                  edge3d.points.pop(); // safely remove 1 intermediate node
+                  edge3d.points.pop();
                 }
-                edge.isNewTicks = 0;
+              } else if (avgStrain > strainMax) {
+                // Too stretched (force above max threshold): Spawn a segment to spread the tension
+                if (edge3d.points.length < maxPts) {
+                  const lastPt = edge3d.points[edge3d.points.length - 1] || n1;
+                  // Add the new point halfway between the last point and the target
+                  edge3d.points.push({
+                    x: (lastPt.x + n2.x) / 2,
+                    y: (lastPt.y + n2.y) / 2,
+                    z: (lastPt.z + n2.z) / 2,
+                    vx: 0, vy: 0, vz: 0
+                  });
+                }
               }
-            } else {
-              edge.isNewTicks = 0;
             }
 
             // (D) Obstacle avoidance repulsion from standard nodes in 3D
@@ -994,26 +977,51 @@
           let end_ty = sinA;
 
           if (pPoints.length > 0) {
-            // (A) Draw smooth physical spline passing through the intermediate 2D projected coordinates!
-            ctx.beginPath();
-            ctx.moveTo(sx, sy);
-            for (let k = 0; k < pPoints.length; k++) {
-              const pCur = pPoints[k];
-              const pNext = pPoints[k + 1] || { x: tx, y: ty };
-              const xc = (pCur.x + pNext.x) / 2;
-              const yc = (pCur.y + pNext.y) / 2;
-              ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
-            }
-            ctx.lineTo(tx, ty);
-            ctx.stroke();
+            // (A) Filter out intermediate nodes that are swallowed inside the projected source or target boundaries!
+            const drawablePoints = pPoints.filter(pt => {
+              const dSrc = Math.sqrt((pt.x - sourceProj.projX) ** 2 + (pt.y - sourceProj.projY) ** 2);
+              const dTgt = Math.sqrt((pt.x - targetProj.projX) ** 2 + (pt.y - targetProj.projY) ** 2);
+              return dSrc > clipDistS && dTgt > clipDistT;
+            });
 
-            // (B) Calculate precise final tangent at the target tip to align the arrowhead perfectly!
-            const lastPt = pPoints[pPoints.length - 1];
-            const tdx = tx - lastPt.x;
-            const tdy = ty - lastPt.y;
-            const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
-            end_tx = tdx / tdist;
-            end_ty = tdy / tdist;
+            if (drawablePoints.length > 0) {
+              // Draw smooth physical spline passing through the filtered intermediate projected nodes!
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              for (let k = 0; k < drawablePoints.length; k++) {
+                const pCur = drawablePoints[k];
+                const pNext = drawablePoints[k + 1] || { x: tx, y: ty };
+                const xc = (pCur.x + pNext.x) / 2;
+                const yc = (pCur.y + pNext.y) / 2;
+                ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
+              }
+              ctx.lineTo(tx, ty);
+              ctx.stroke();
+
+              // (B) Calculate precise final tangent at the target tip to align the arrowhead perfectly!
+              const lastPt = drawablePoints[drawablePoints.length - 1];
+              const tdx = tx - lastPt.x;
+              const tdy = ty - lastPt.y;
+              const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+              end_tx = tdx / tdist;
+              end_ty = tdy / tdist;
+            } else {
+              // Fallback: draw straight/quadratic line if all points are swallowed inside boundaries
+              ctx.beginPath();
+              ctx.moveTo(sx, sy);
+              if (bendAmount > 0) {
+                ctx.quadraticCurveTo(qx, qy, tx, ty);
+                const t_u = 1.0;
+                const dx_bend = 2 * (1 - t_u) * (qx - sx) + 2 * t_u * (tx - qx);
+                const dy_bend = 2 * (1 - t_u) * (qy - sy) + 2 * t_u * (ty - qy);
+                const dDist_bend = Math.sqrt(dx_bend * dx_bend + dy_bend * dy_bend) || 1;
+                end_tx = dx_bend / dDist_bend;
+                end_ty = dy_bend / dDist_bend;
+              } else {
+                ctx.lineTo(tx, ty);
+              }
+              ctx.stroke();
+            }
           } else {
             // Fallback: draw straight/quadratic line if no intermediate points are present
             ctx.beginPath();

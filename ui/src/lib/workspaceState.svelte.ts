@@ -46,6 +46,8 @@ MATCH {
       atom_nonSuccessive: 150,       // repulsion between atoms and intermediate points
       nonSuccessive_nonSuccessive: 180, // repulsion between different intermediate points
       successive_tension: 0.16,      // elastic spring tension between consecutive points
+      strain_min: 2.0,               // threshold to remove intermediate points (too relaxed)
+      strain_max: 10.0,              // threshold to add intermediate points (too stretched)
     }
   });
 

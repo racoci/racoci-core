@@ -438,64 +438,46 @@ export class CanvasRenderer {
             }
           }
 
-          // (B) Proportional 2-second (120 frames) re-sampling to add/remove points on stretch
+          // (B & C) Dynamic Force-Based Re-sampling (Spawn/Prune segments)
+          // Evaluate every 120 frames (2 seconds) to keep simulation stable
           if (this.frameCount % 120 === 0 && sNode && tNode) {
-            const dx = tNode.x - sNode.x;
-            const dy = tNode.y - sNode.y;
-            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-            // Clamp desired intermediate nodes count to a maximum of maxIntermediatePoints!
+            const currentN = edge.points.length;
+            let totalStrain = 0;
+            for (let k = 0; k <= currentN; k++) {
+              const pt_prev = edge.points[k - 1];
+              const pt_curr = edge.points[k];
+
+              const ax = (k === 0) ? sCoord.x : (pt_prev ? pt_prev.x : sCoord.x);
+              const ay = (k === 0) ? sCoord.y : (pt_prev ? pt_prev.y : sCoord.y);
+              const bx = (k === currentN) ? tCoord.x : (pt_curr ? pt_curr.x : tCoord.x);
+              const by = (k === currentN) ? tCoord.y : (pt_curr ? pt_curr.y : tCoord.y);
+
+              const d = Math.sqrt((bx - ax)**2 + (by - ay)**2) || 1;
+              totalStrain += Math.abs(d - segmentRestLen);
+            }
+            const avgStrain = totalStrain / (currentN + 1);
+
+            const strainMin = (this.physicsSettings?.forces?.strain_min) ?? 2.0;
+            const strainMax = (this.physicsSettings?.forces?.strain_max) ?? 10.0;
             const maxPts = (this.physicsSettings?.maxIntermediatePoints) ?? 5;
-            const desiredNumPoints = Math.min(
-              maxPts, 
-              Math.max(0, Math.floor(dist / 45) - 1)
-            );
-            
-            if (desiredNumPoints !== edge.points.length) {
-              if (desiredNumPoints < edge.points.length) {
-                edge.points = edge.points.slice(0, desiredNumPoints);
-              } else {
-                const diff = desiredNumPoints - edge.points.length;
-                const lastPt = edge.points[edge.points.length - 1] || sNode;
-                for (let i = 1; i <= diff; i++) {
-                  const t = i / (diff + 1);
-                  edge.points.push({
-                    x: lastPt.x + (tNode.x - lastPt.x) * t,
-                    y: lastPt.y + (tNode.y - lastPt.y) * t,
-                    vx: 0, vy: 0
-                  });
-                }
-              }
-            }
-          }
 
-          // (C) Strain-adaptive decimation (prune intermediate points under low tension/strain)
-          const currentN = edge.points.length;
-          let totalStrain = 0;
-          for (let k = 0; k <= currentN; k++) {
-            const pt_prev = edge.points[k - 1];
-            const pt_curr = edge.points[k];
-
-            const ax = (k === 0) ? sCoord.x : (pt_prev ? pt_prev.x : sCoord.x);
-            const ay = (k === 0) ? sCoord.y : (pt_prev ? pt_prev.y : sCoord.y);
-            const bx = (k === currentN) ? tCoord.x : (pt_curr ? pt_curr.x : tCoord.x);
-            const by = (k === currentN) ? tCoord.y : (pt_curr ? pt_curr.y : tCoord.y);
-
-            const d = Math.sqrt((bx - ax)**2 + (by - ay)**2) || 1;
-            totalStrain += Math.abs(d - segmentRestLen);
-          }
-          const avgStrain = totalStrain / (currentN + 1);
-
-          if (avgStrain < 8.0) { // threshold of low strain (nearly relaxed/straight)
-            if (edge.isNewTicks === undefined) edge.isNewTicks = 0;
-            edge.isNewTicks++;
-            if (edge.isNewTicks > 60) { // low strain for > 1 second
+            if (avgStrain < strainMin) {
+              // Too relaxed (force below min threshold): Prune a segment
               if (edge.points.length > 0) {
-                edge.points.pop(); // safely remove 1 intermediate node
+                edge.points.pop();
               }
-              edge.isNewTicks = 0;
+            } else if (avgStrain > strainMax) {
+              // Too stretched (force above max threshold): Spawn a segment to spread the tension
+              if (edge.points.length < maxPts) {
+                const lastPt = edge.points[edge.points.length - 1] || sNode;
+                // Add the new point halfway between the last point and the target
+                edge.points.push({
+                  x: (lastPt.x + tCoord.x) / 2,
+                  y: (lastPt.y + tCoord.y) / 2,
+                  vx: 0, vy: 0
+                });
+              }
             }
-          } else {
-            edge.isNewTicks = 0;
           }
 
           // (D) Obstacle avoidance repulsion from standard nodes
@@ -1278,33 +1260,58 @@ export class CanvasRenderer {
       let label_y = (sy + ty) / 2;
 
       if (edge.points && edge.points.length > 0) {
-        // (A) Draw smooth physical spline passing through the intermediate physical nodes!
-        this.ctx.beginPath();
-        this.ctx.moveTo(sx, sy);
-        for (let k = 0; k < edge.points.length; k++) {
-          const pCur = edge.points[k];
-          const pNext = edge.points[k + 1] || { x: tx, y: ty };
-          const xc = (pCur.x + pNext.x) / 2;
-          const yc = (pCur.y + pNext.y) / 2;
-          this.ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
+        // (A) Filter out intermediate nodes that are swallowed inside the source or target boundaries!
+        // This stops the drawn string from hooking backwards inside the box.
+        const drawablePoints = edge.points.filter(pt => {
+          const dSrc = Math.sqrt((pt.x - sCoord.x) ** 2 + (pt.y - sCoord.y) ** 2);
+          const dTgt = Math.sqrt((pt.x - tCoord.x) ** 2 + (pt.y - tCoord.y) ** 2);
+          return dSrc > sourceDist && dTgt > arrowDist;
+        });
+
+        if (drawablePoints.length > 0) {
+          // Draw smooth physical spline passing through the filtered intermediate physical nodes!
+          this.ctx.beginPath();
+          this.ctx.moveTo(sx, sy);
+          for (let k = 0; k < drawablePoints.length; k++) {
+            const pCur = drawablePoints[k];
+            const pNext = drawablePoints[k + 1] || { x: tx, y: ty };
+            const xc = (pCur.x + pNext.x) / 2;
+            const yc = (pCur.y + pNext.y) / 2;
+            this.ctx.quadraticCurveTo(pCur.x, pCur.y, xc, yc);
+          }
+          this.ctx.lineTo(tx, ty);
+          this.ctx.stroke();
+
+          // Calculate precise final tangent at the target tip to align the arrowhead perfectly!
+          const lastPt = drawablePoints[drawablePoints.length - 1];
+          const tdx = tx - lastPt.x;
+          const tdy = ty - lastPt.y;
+          const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+          end_tx = tdx / tdist;
+          end_ty = tdy / tdist;
+          end_nx = -end_ty;
+          end_ny = end_tx;
+
+          // Position the text label exactly at the middle physical node!
+          const midPt = drawablePoints[Math.floor(drawablePoints.length / 2)];
+          label_x = midPt.x;
+          label_y = midPt.y;
+        } else {
+          // If all points are swallowed inside the boundaries, fall back to standard Bezier Curve
+          this.ctx.beginPath();
+          this.ctx.moveTo(sx, sy);
+          if (bendAmount > 0) {
+            this.ctx.quadraticCurveTo(qx, qy, tx, ty);
+            const tPt = getSpinePoint(1.0);
+            end_tx = tPt.tx; end_ty = tPt.ty;
+            end_nx = tPt.nx; end_ny = tPt.ny;
+            const mPt = getSpinePoint(0.5);
+            label_x = mPt.x; label_y = mPt.y;
+          } else {
+            this.ctx.lineTo(tx, ty);
+          }
+          this.ctx.stroke();
         }
-        this.ctx.lineTo(tx, ty);
-        this.ctx.stroke();
-
-        // (B) Calculate precise final tangent at the target tip to align the arrowhead perfectly!
-        const lastPt = edge.points[edge.points.length - 1];
-        const tdx = tx - lastPt.x;
-        const tdy = ty - lastPt.y;
-        const tdist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
-        end_tx = tdx / tdist;
-        end_ty = tdy / tdist;
-        end_nx = -end_ty;
-        end_ny = end_tx;
-
-        // Position the text label exactly at the middle physical node!
-        const midPt = edge.points[Math.floor(edge.points.length / 2)];
-        label_x = midPt.x;
-        label_y = midPt.y;
       } else {
         // Fallback: draw quadratic Bezier curve (only if no physical points are available)
         this.ctx.beginPath();

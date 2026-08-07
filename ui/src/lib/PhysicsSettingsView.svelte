@@ -162,6 +162,42 @@
         />
         <span class="control-desc">Elastic tension between consecutive segments. High values pull strings straight.</span>
       </div>
+
+      <!-- Threshold 1: Strain Max (Spawn Nodes) -->
+      <div class="control-group">
+        <label for="strain-max-slider" class="control-label">
+          <span>Strain Max (Spawn Segments)</span>
+          <span class="control-val text-cyan">{workspaceState.physicsSettings.forces.strain_max.toFixed(1)}</span>
+        </label>
+        <input 
+          id="strain-max-slider"
+          type="range" 
+          min="5.0" 
+          max="40.0" 
+          step="1.0" 
+          bind:value={workspaceState.physicsSettings.forces.strain_max} 
+          class="cyber-slider slider-cyan"
+        />
+        <span class="control-desc">If average segment force exceeds this limit, new intermediate segments spawn to relieve tension.</span>
+      </div>
+
+      <!-- Threshold 2: Strain Min (Prune Nodes) -->
+      <div class="control-group">
+        <label for="strain-min-slider" class="control-label">
+          <span>Strain Min (Prune Segments)</span>
+          <span class="control-val text-yellow">{workspaceState.physicsSettings.forces.strain_min.toFixed(1)}</span>
+        </label>
+        <input 
+          id="strain-min-slider"
+          type="range" 
+          min="0.5" 
+          max="15.0" 
+          step="0.5" 
+          bind:value={workspaceState.physicsSettings.forces.strain_min} 
+          class="cyber-slider slider-yellow"
+        />
+        <span class="control-desc">If average segment force drops below this limit (too relaxed), extra segments are deleted to prevent curling.</span>
+      </div>
     </div>
   </div>
 </div>
