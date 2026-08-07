@@ -19,6 +19,8 @@
   let dockviewInstance: DockviewComponent | null = null;
 
   onMount(() => {
+    let layoutChangeDisposable: any = null;
+
     // Simulate minor FPS fluctuation and shared memory state activity
     const fpsInterval = setInterval(() => {
       workspaceState.frameRate = Math.floor(58 + Math.random() * 3);
@@ -89,52 +91,85 @@
         }
       });
 
-      console.log("CONSTRUCTING PANEL PANES GRID...");
+      console.log("INITIALIZING PANEL PANES GRID PERSISTENCE...");
 
-      // Construct the absolute best grid layout using Dockview splits!
-      const workspacesPanel = dockviewInstance.addPanel({
-        id: 'workspaces',
-        component: 'workspaces',
-        title: 'Workspaces List'
+      // Helper to establish standard default layout on fresh visit
+      const createDefaultLayout = () => {
+        const workspacesPanel = dockviewInstance.addPanel({
+          id: 'workspaces',
+          component: 'workspaces',
+          title: 'Workspaces List'
+        });
+
+        const editorPanel = dockviewInstance.addPanel({
+          id: 'editor',
+          component: 'editor',
+          title: 'H-Cypher Editor',
+          position: { referencePanel: workspacesPanel, direction: 'right' }
+        });
+
+        const canvasPanel = dockviewInstance.addPanel({
+          id: 'canvas',
+          component: 'canvas',
+          title: '2D Hypergraph',
+          position: { referencePanel: editorPanel, direction: 'below' }
+        });
+
+        const view3dPanel = dockviewInstance.addPanel({
+          id: 'projection3d',
+          component: 'projection3d',
+          title: '3D Projection',
+          position: { referencePanel: canvasPanel, direction: 'right' }
+        });
+
+        const settingsPanel = dockviewInstance.addPanel({
+          id: 'physics_settings',
+          component: 'physics_settings',
+          title: 'Simulation Settings',
+          position: { referencePanel: view3dPanel, direction: 'right' }
+        });
+
+        // Set initial panel sizing (Left workspaces: 18%, Settings: 24%)
+        workspacesPanel.group.api.setSize(220);
+        settingsPanel.group.api.setSize(340);
+      };
+
+      // Attempt to load previously saved layout from browser preferences
+      const savedLayoutStr = localStorage.getItem('holds_dockview_layout_v1');
+      let loaded = false;
+      if (savedLayoutStr) {
+        try {
+          const savedLayout = JSON.parse(savedLayoutStr);
+          dockviewInstance.fromJSON(savedLayout);
+          console.log("DOCKVIEW WORKSPACE RESTORED FROM USER PREFERENCES!");
+          loaded = true;
+        } catch (e) {
+          console.error("Failed to restore saved layout from localStorage, using fallback layout...", e);
+        }
+      }
+
+      if (!loaded) {
+        createDefaultLayout();
+      }
+
+      // ONLY subscribe to layout change events after initial layout is established!
+      layoutChangeDisposable = dockviewInstance.onDidLayoutChange(() => {
+        try {
+          const layout = dockviewInstance.toJSON();
+          localStorage.setItem('holds_dockview_layout_v1', JSON.stringify(layout));
+        } catch (e) {
+          console.error("Failed to serialize and persist dockview layout:", e);
+        }
       });
-
-      const editorPanel = dockviewInstance.addPanel({
-        id: 'editor',
-        component: 'editor',
-        title: 'H-Cypher Editor',
-        position: { referencePanel: workspacesPanel, direction: 'right' }
-      });
-
-      const canvasPanel = dockviewInstance.addPanel({
-        id: 'canvas',
-        component: 'canvas',
-        title: '2D Hypergraph',
-        position: { referencePanel: editorPanel, direction: 'below' }
-      });
-
-      const view3dPanel = dockviewInstance.addPanel({
-        id: 'projection3d',
-        component: 'projection3d',
-        title: '3D Projection',
-        position: { referencePanel: canvasPanel, direction: 'right' }
-      });
-
-      const settingsPanel = dockviewInstance.addPanel({
-        id: 'physics_settings',
-        component: 'physics_settings',
-        title: 'Simulation Settings',
-        position: { referencePanel: view3dPanel, direction: 'right' }
-      });
-
-      // Set initial panel sizing (Left workspaces: 18%, Settings: 24%)
-      workspacesPanel.group.api.setSize(220);
-      settingsPanel.group.api.setSize(340);
 
       console.log("DOCKVIEW WORKSPACE SECURED!");
     }
 
     return () => {
       clearInterval(fpsInterval);
+      if (layoutChangeDisposable) {
+        layoutChangeDisposable.dispose();
+      }
       if (dockviewInstance) {
         dockviewInstance.dispose();
       }
