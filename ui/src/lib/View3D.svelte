@@ -238,12 +238,19 @@
       isDragging = true;
       isDraggingCamera = false;
       canvasElement.style.cursor = 'grabbing';
+
+      // Synchronize selection in global workspaceState!
+      const nodeData = workspaceState.parseResult?.nodes?.find(n => n.id === clickedNodeId);
+      if (nodeData) {
+        workspaceState.selectedNode = nodeData;
+      }
     } else {
       console.log("3D CLICKS MISSED - ORBITING CAMERA...");
       draggedNodeId = null;
       isDragging = true;
       isDraggingCamera = true;
       canvasElement.style.cursor = 'grabbing';
+      workspaceState.selectedNode = null; // deselect on clicking empty canvas space
     }
 
     lastMouseX = e.clientX;
@@ -1085,10 +1092,13 @@
     projectedNodes.forEach(pn => {
       const isHovered = pn.id === hoveredNodeId;
       const isDragged = pn.id === draggedNodeId;
+      const isSelected = workspaceState.selectedNode && workspaceState.selectedNode.id === pn.id;
+      
       const alpha = Math.max(0.15, Math.min(1.0, 1 - (pn.rotZ + 150) / 300));
       
       ctx.save();
-      ctx.globalAlpha = alpha;
+      // Selected nodes stay 100% bright, ignoring distance fade!
+      ctx.globalAlpha = isSelected ? 1.0 : alpha;
 
       const baseColor = pn.color || '#ffffff';
       const borderCol = applyContrastProtection(workspaceState.currentBgColor, baseColor);
@@ -1107,17 +1117,17 @@
       const w = Math.max(50, textWidth + 16) * depthScale;
       const h = 22 * depthScale;
 
-      // Draw shadow glow matching the node's color!
-      ctx.shadowColor = borderCol;
-      ctx.shadowBlur = (isHovered || isDragged) ? 22 : 10;
+      // Draw shadow glow matching the node's color (grows extremely intense and neon cyan if selected!)
+      ctx.shadowColor = isSelected ? '#66fcf1' : borderCol;
+      ctx.shadowBlur = isSelected ? 35 : ((isHovered || isDragged) ? 22 : 10);
 
       // Draw background rounded rect
       const grad = ctx.createLinearGradient(pn.projX, pn.projY - h / 2, pn.projX, pn.projY + h / 2);
       grad.addColorStop(0, bgGradStart);
       grad.addColorStop(1, bgGradEnd);
       ctx.fillStyle = grad;
-      ctx.strokeStyle = borderCol;
-      ctx.lineWidth = isHovered ? 2.0 : 1.0;
+      ctx.strokeStyle = isSelected ? '#66fcf1' : borderCol;
+      ctx.lineWidth = isSelected ? 3.0 : (isHovered ? 2.0 : 1.0);
 
       ctx.beginPath();
       // Custom rounded rect implementation inside render3D
@@ -1138,6 +1148,33 @@
       
       ctx.fill();
       ctx.stroke();
+
+      // If selected, draw an elegant secondary neon cyan outer targeting reticle
+      if (isSelected) {
+        ctx.strokeStyle = '#66fcf1';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = '#66fcf1';
+        ctx.shadowBlur = 15;
+        
+        ctx.beginPath();
+        const sw = w + 8;
+        const sh = h + 8;
+        const srx = pn.projX - sw / 2;
+        const sry = pn.projY - sh / 2;
+        const sradius = Math.min(8, sw / 4);
+
+        ctx.moveTo(srx + sradius, sry);
+        ctx.lineTo(srx + sw - sradius, sry);
+        ctx.quadraticCurveTo(srx + sw, sry, srx + sw, sry + sradius);
+        ctx.lineTo(srx + sw, sry + sh - sradius);
+        ctx.quadraticCurveTo(srx + sw, sry + sh, srx + sw - sradius, sry + sh);
+        ctx.lineTo(srx + sradius, sry + sh);
+        ctx.quadraticCurveTo(srx, sry + sh, srx, sry + sh - sradius);
+        ctx.lineTo(srx, sry + sradius);
+        ctx.quadraticCurveTo(srx, sry, srx + sradius, sry);
+        ctx.closePath();
+        ctx.stroke();
+      }
 
       // Reset shadows before drawing text to keep text extremely sharp!
       ctx.shadowBlur = 0;
