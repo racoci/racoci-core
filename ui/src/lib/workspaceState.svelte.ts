@@ -83,29 +83,29 @@ MATCH {
           {
             type: 'split',
             split: 'horizontal',
-            percent: 50,
+            percent: 65,
             children: [
               {
-                type: 'widget',
-                id: 'widget-canvas',
-                widgetType: 'canvas'
-              },
-              {
                 type: 'split',
-                split: 'horizontal',
-                percent: 55,
+                split: 'vertical',
+                percent: 50,
                 children: [
+                  {
+                    type: 'widget',
+                    id: 'widget-canvas',
+                    widgetType: 'canvas'
+                  },
                   {
                     type: 'widget',
                     id: 'widget-3d',
                     widgetType: 'projection3d'
-                  },
-                  {
-                    type: 'widget',
-                    id: 'widget-physics-settings',
-                    widgetType: 'physics_settings'
                   }
                 ]
+              },
+              {
+                type: 'widget',
+                id: 'widget-physics-settings',
+                widgetType: 'physics_settings'
               }
             ]
           }
