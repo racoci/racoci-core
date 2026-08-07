@@ -1501,13 +1501,8 @@ export class CanvasRenderer {
           bgGradEnd = bgL >= 0.5 ? '#cbd5e1' : '#1e293b';
         }
 
-        if (node.id === this.selectedNodeId) {
-          this.ctx.strokeStyle = '#66fcf1'; // neon cyan outline for selected nodes
-          this.ctx.shadowColor = '#66fcf1'; // neon cyan glow for selected nodes
-        } else {
-          this.ctx.strokeStyle = borderCol;
-          this.ctx.shadowColor = borderCol;
-        }
+        this.ctx.strokeStyle = borderCol;
+        this.ctx.shadowColor = borderCol;
       }
 
       // Calculate dynamic rounded-square bounds based on the text width
@@ -1517,7 +1512,7 @@ export class CanvasRenderer {
       const h = 36; // perfect height for title + subtitle
 
       // Node shadow/glow - smoothly fades from high brightness down to normal over 60 frames!
-      let baseShadowBlur = node.id === this.selectedNodeId ? 35 : (this.draggedNodeId === node.id ? 22 : 10);
+      let baseShadowBlur = node.id === this.selectedNodeId ? 26 : (this.draggedNodeId === node.id ? 22 : 10);
       if (node.isNew && node.isNewTicks !== undefined) {
         const t = Math.min(1.0, node.isNewTicks / 60);
         baseShadowBlur += 15 * (1 - t); // smoothly fades extra glow from +15 down to +0
@@ -1535,7 +1530,7 @@ export class CanvasRenderer {
       this.ctx.fill();
 
       // Border outline
-      this.ctx.lineWidth = node.id === this.selectedNodeId ? 3.5 : 2.0;
+      this.ctx.lineWidth = node.id === this.selectedNodeId ? 3.0 : 2.0;
       this.ctx.stroke();
 
       // Turn off shadow glow for text rendering to keep it sharp

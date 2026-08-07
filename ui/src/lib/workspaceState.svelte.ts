@@ -31,7 +31,7 @@ MATCH {
   frameRate = $state(60);
   currentBgColor = $state("#0b0f19");
   selectedNode = $state<any>(null);
-  renderer: any = null; // CanvasRenderer reference
+  renderer = $state<any>(null); // CanvasRenderer reference (fully reactive in Svelte 5!)
 
   // Svelte 5 Native, Flat, Globally and Deeply Reactive Signals!
   maxIntermediatePoints = $state(5);
