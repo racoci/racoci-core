@@ -281,7 +281,7 @@ export class CanvasRenderer {
    */
   private updatePhysics() {
     const nodesArr = Array.from(this.nodes.values());
-    const kRepulsion = (this.physicsSettings?.forces?.atom_atom) ?? 1500; // dynamically bound!
+    const kRepulsion = (this.physicsSettings?.forceAtomAtom) ?? 1500; // dynamically bound!
     const kGravity = 0.015;  // gentle pull toward center
     const kDamping = 0.65;   // higher friction (lower value dampens speed faster)
     const kSpring = 0.015;   // gentle spring force
@@ -306,7 +306,7 @@ export class CanvasRenderer {
 
         if (dist < 350) {
           const force = kRepulsion / (dist * dist);
-          const mass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+          const mass = (this.physicsSettings?.massAtom) ?? 1.0;
           const fx = (dx / dist) * force / mass;
           const fy = (dy / dist) * force / mass;
 
@@ -413,27 +413,27 @@ export class CanvasRenderer {
             const jdx = bx - ax;
             const jdy = by - ay;
             const jd = Math.sqrt(jdx * jdx + jdy * jdy) || 1;
-            const successiveTension = (this.physicsSettings?.forces?.successive_tension) ?? 0.16;
+            const successiveTension = (this.physicsSettings?.forceSuccessiveTension) ?? 0.16;
             const jforce = (jd - segmentRestLen) * successiveTension; // dynamically bound!
             const jfx = (jdx / jd) * jforce;
             const jfy = (jdy / jd) * jforce;
 
             if (k > 0 && pt_prev) {
-              const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+              const segMass = (this.physicsSettings?.massSegment) ?? 0.25;
               pt_prev.vx += jfx / segMass;
               pt_prev.vy += jfy / segMass;
             } else if (sNode && sNode.id !== this.draggedNodeId) {
-              const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+              const atomMass = (this.physicsSettings?.massAtom) ?? 1.0;
               sNode.vx += (jfx * 0.15) / atomMass;
               sNode.vy += (jfy * 0.15) / atomMass;
             }
 
             if (k < n_initial && pt_curr) {
-              const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
+              const segMass = (this.physicsSettings?.massSegment) ?? 0.25;
               pt_curr.vx -= jfx / segMass;
               pt_curr.vy -= jfy / segMass;
             } else if (tNode && tNode.id !== this.draggedNodeId) {
-              const atomMass = (this.physicsSettings?.masses?.atom) ?? 1.0;
+              const atomMass = (this.physicsSettings?.massAtom) ?? 1.0;
               tNode.vx -= (jfx * 0.15) / atomMass;
               tNode.vy -= (jfy * 0.15) / atomMass;
             }
@@ -458,8 +458,8 @@ export class CanvasRenderer {
             }
             const avgStrain = totalStrain / (currentN + 1);
 
-            const strainMin = (this.physicsSettings?.forces?.strain_min) ?? 2.0;
-            const strainMax = (this.physicsSettings?.forces?.strain_max) ?? 10.0;
+            const strainMin = (this.physicsSettings?.strainMin) ?? 2.0;
+            const strainMax = (this.physicsSettings?.strainMax) ?? 10.0;
             const maxPts = (this.physicsSettings?.maxIntermediatePoints) ?? 5;
 
             if (avgStrain < strainMin) {
@@ -494,8 +494,8 @@ export class CanvasRenderer {
 
               if (rdist < avoidanceRadius) {
                 // lower intensity repulsion (less mass) - dynamically bound!
-                const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
-                const atomNonSuccessive = (this.physicsSettings?.forces?.atom_nonSuccessive) ?? 150;
+                const segMass = (this.physicsSettings?.massSegment) ?? 0.25;
+                const atomNonSuccessive = (this.physicsSettings?.forceAtomSegment) ?? 150;
                 const rforce = (atomNonSuccessive / (rdist * rdist)) / segMass;
                 pt.vx += (rdx / rdist) * rforce;
                 pt.vy += (rdy / rdist) * rforce;
@@ -543,8 +543,8 @@ export class CanvasRenderer {
 
         if (dist < avoidanceRadius) {
           // Dynamically bound segment repulsion scaled by segment mass!
-          const segMass = (this.physicsSettings?.masses?.segment) ?? 0.25;
-          const nonSuccessiveForces = (this.physicsSettings?.forces?.nonSuccessive_nonSuccessive) ?? 180;
+          const segMass = (this.physicsSettings?.massSegment) ?? 0.25;
+          const nonSuccessiveForces = (this.physicsSettings?.forceSegmentSegment) ?? 180;
           const force = (nonSuccessiveForces / (dist * dist)) / segMass;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;

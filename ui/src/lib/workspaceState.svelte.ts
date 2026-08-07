@@ -33,23 +33,17 @@ MATCH {
   selectedNode = $state<any>(null);
   renderer: any = null; // CanvasRenderer reference
 
-  // Global Physics Simulation Settings (Customizable via new Simulation Widget)
-  physicsSettings = $state({
-    maxIntermediatePoints: 5,
-    showIntermediatePoints: false,
-    masses: {
-      atom: 1.0,                     // base mass of standard atoms
-      segment: 0.25,                 // base mass of intermediate points
-    },
-    forces: {
-      atom_atom: 1500,               // kRepulsion between standard atoms
-      atom_nonSuccessive: 150,       // repulsion between atoms and intermediate points
-      nonSuccessive_nonSuccessive: 180, // repulsion between different intermediate points
-      successive_tension: 0.16,      // elastic spring tension between consecutive points
-      strain_min: 2.0,               // threshold to remove intermediate points (too relaxed)
-      strain_max: 10.0,              // threshold to add intermediate points (too stretched)
-    }
-  });
+  // Svelte 5 Native, Flat, Globally and Deeply Reactive Signals!
+  maxIntermediatePoints = $state(5);
+  showIntermediatePoints = $state(false);
+  massAtom = $state(1.0);
+  massSegment = $state(0.25);
+  forceAtomAtom = $state(1500);
+  forceAtomSegment = $state(150);
+  forceSegmentSegment = $state(180);
+  forceSuccessiveTension = $state(0.16);
+  strainMin = $state(2.0);
+  strainMax = $state(10.0);
 
   // Predefined projections / workspaces list
   workspaces = [

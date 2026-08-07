@@ -176,7 +176,7 @@
             const dz = tNode.z - sNode.z;
             const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
             // Clamp the number of intermediate nodes to a maximum of maxIntermediatePoints, with at least 1 point!
-            const maxPts = workspaceState.physicsSettings?.maxIntermediatePoints ?? 5;
+            const maxPts = workspaceState.maxIntermediatePoints;
             const numPoints = Math.min(maxPts, Math.max(1, Math.floor(dist / 45)));
             for (let i = 1; i <= numPoints; i++) {
               const t = i / (numPoints + 1);
@@ -428,7 +428,7 @@
 
   function update3DPhysics() {
     const nodes = Array.from(nodes3D.values());
-    const kRepulsion = workspaceState.physicsSettings.forces.atom_atom; // dynamically bound!
+    const kRepulsion = workspaceState.forceAtomAtom; // dynamically bound flat property!
     const kGravity = 0.02;
     const kSpring = 0.02;
     const kDamping = 0.85;
@@ -445,7 +445,7 @@
 
         if (dist < 200) {
           const force = kRepulsion / (dist * dist);
-          const mass = workspaceState.physicsSettings.masses.atom || 1.0; // dynamically bound mass!
+          const mass = workspaceState.massAtom || 1.0; // dynamically bound flat mass!
           const fx = (dx / dist) * force / mass;
           const fy = (dy / dist) * force / mass;
           const fz = (dz / dist) * force / mass;
@@ -517,30 +517,30 @@
               const jdy = by - ay;
               const jdz = bz - az;
               const jd = Math.sqrt(jdx * jdx + jdy * jdy + jdz * jdz) || 1;
-              const jforce = (jd - segmentRestLen) * workspaceState.physicsSettings.forces.successive_tension; // dynamically bound!
+              const jforce = (jd - segmentRestLen) * workspaceState.forceSuccessiveTension; // dynamically bound flat property!
               const jfx = (jdx / jd) * jforce;
               const jfy = (jdy / jd) * jforce;
               const jfz = (jdz / jd) * jforce;
 
               if (k > 0 && pt_prev) {
-                const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
+                const segMass = workspaceState.massSegment || 0.25;
                 pt_prev.vx += jfx / segMass;
                 pt_prev.vy += jfy / segMass;
                 pt_prev.vz += jfz / segMass;
               } else if (n1.id !== draggedNodeId) {
-                const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
+                const atomMass = workspaceState.massAtom || 1.0;
                 n1.vx += (jfx * 0.15) / atomMass;
                 n1.vy += (jfy * 0.15) / atomMass;
                 n1.vz += (jfz * 0.15) / atomMass;
               }
 
               if (k < n_initial && pt_curr) {
-                const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
+                const segMass = workspaceState.massSegment || 0.25;
                 pt_curr.vx -= jfx / segMass;
                 pt_curr.vy -= jfy / segMass;
                 pt_curr.vz -= jfz / segMass;
               } else if (n2.id !== draggedNodeId) {
-                const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
+                const atomMass = workspaceState.massAtom || 1.0;
                 n2.vx -= (jfx * 0.15) / atomMass;
                 n2.vy -= (jfy * 0.15) / atomMass;
                 n2.vz -= (jfz * 0.15) / atomMass;
@@ -569,9 +569,9 @@
               }
               const avgStrain = totalStrain / (currentN + 1);
 
-              const strainMin = workspaceState.physicsSettings.forces.strain_min ?? 2.0;
-              const strainMax = workspaceState.physicsSettings.forces.strain_max ?? 10.0;
-              const maxPts = workspaceState.physicsSettings.maxIntermediatePoints ?? 5;
+              const strainMin = workspaceState.strainMin;
+              const strainMax = workspaceState.strainMax;
+              const maxPts = workspaceState.maxIntermediatePoints;
 
               if (avgStrain < strainMin) {
                 // Too relaxed (force below min threshold): Prune a segment
@@ -607,8 +607,8 @@
 
                 if (rdist < avoidanceRadius) {
                   // lower intensity repulsion (less mass) - dynamically bound!
-                  const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-                  const rforce = (workspaceState.physicsSettings.forces.atom_nonSuccessive / (rdist * rdist)) / segMass;
+                  const segMass = workspaceState.massSegment || 0.25;
+                  const rforce = (workspaceState.forceAtomSegment / (rdist * rdist)) / segMass;
                   pt.vx += (rdx / rdist) * rforce;
                   pt.vy += (rdy / rdist) * rforce;
                   pt.vz += (rdz / rdist) * rforce;
@@ -658,8 +658,8 @@
 
           if (dist < avoidanceRadius) {
             // Dynamically bound segment repulsion scaled by segment mass!
-            const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-            const force = (workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive / (dist * dist)) / segMass;
+            const segMass = workspaceState.massSegment || 0.25;
+            const force = (workspaceState.forceSegmentSegment / (dist * dist)) / segMass;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
             const fz = (dz / dist) * force;
@@ -1064,7 +1064,7 @@
           ctx.restore();
 
           // 2.5 Draw neon yellow joints for intermediate points if showIntermediatePoints is enabled!
-          if (workspaceState.physicsSettings.showIntermediatePoints && pPoints.length > 0) {
+          if (workspaceState.showIntermediatePoints && pPoints.length > 0) {
             ctx.save();
             ctx.fillStyle = '#facc15';
             ctx.shadowColor = '#facc15';
