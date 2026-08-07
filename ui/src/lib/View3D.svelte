@@ -153,6 +153,10 @@
   // Sync 3D physical edges when parseResult changes
   $effect(() => {
     if (workspaceState.parseResult) {
+      // Establish an active reactivity sequencing dependency on nodes3D!
+      // This forces the effect to re-run and find newly created nodes!
+      nodes3D;
+      
       const nextMap = new Map<string, Edge3D>();
       workspaceState.parseResult.edges.forEach(pe => {
         const edgeKey = `${pe.source}-${pe.target}`;
@@ -171,8 +175,9 @@
             const dy = tNode.y - sNode.y;
             const dz = tNode.z - sNode.z;
             const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
-            // Clamp the number of intermediate nodes to a maximum of 5 to not overload the simulation!
-            const numPoints = Math.min(5, Math.max(0, Math.floor(dist / 45) - 1));
+            // Clamp the number of intermediate nodes to a maximum of maxIntermediatePoints, with at least 1 point!
+            const maxPts = workspaceState.physicsSettings?.maxIntermediatePoints ?? 5;
+            const numPoints = Math.min(maxPts, Math.max(1, Math.floor(dist / 45)));
             for (let i = 1; i <= numPoints; i++) {
               const t = i / (numPoints + 1);
               points.push({

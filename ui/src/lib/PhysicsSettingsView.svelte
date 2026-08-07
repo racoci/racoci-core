@@ -26,6 +26,7 @@
           max="10" 
           step="1" 
           bind:value={workspaceState.physicsSettings.maxIntermediatePoints} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider"
         />
         <span class="control-desc">Limits vertices per edge to prevent performance degradation on large files.</span>
@@ -37,6 +38,7 @@
             id="show-pts-checkbox"
             type="checkbox" 
             bind:checked={workspaceState.physicsSettings.showIntermediatePoints} 
+            onchange={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
             class="cyber-checkbox"
           />
           <span class="checkbox-custom"></span>
@@ -63,6 +65,7 @@
           max="5.0" 
           step="0.1" 
           bind:value={workspaceState.physicsSettings.masses.atom} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-yellow"
         />
         <span class="control-desc">Base mass of standard graph nodes. Higher mass dampens acceleration, making nodes heavier and more stable.</span>
@@ -81,6 +84,7 @@
           max="2.0" 
           step="0.05" 
           bind:value={workspaceState.physicsSettings.masses.segment} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-pink"
         />
         <span class="control-desc">Base mass of intermediate spline nodes. Lower mass makes edge strings extremely agile and responsive to obstacle repulsion.</span>
@@ -104,6 +108,7 @@
           max="3000" 
           step="50" 
           bind:value={workspaceState.physicsSettings.forces.atom_atom} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-yellow"
         />
         <span class="control-desc">Repulsion force separating parsed graph atoms. Higher values space out clusters.</span>
@@ -122,6 +127,7 @@
           max="1000" 
           step="10" 
           bind:value={workspaceState.physicsSettings.forces.atom_nonSuccessive} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-cyan"
         />
         <span class="control-desc">Mass-adjusted repulsion force pushing edge segments away from node borders.</span>
@@ -140,6 +146,7 @@
           max="1000" 
           step="10" 
           bind:value={workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-purple"
         />
         <span class="control-desc">Repulsion between non-successive intermediate points. Promotes parallel edge routing.</span>
@@ -158,6 +165,7 @@
           max="0.50" 
           step="0.01" 
           bind:value={workspaceState.physicsSettings.forces.successive_tension} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-pink"
         />
         <span class="control-desc">Elastic tension between consecutive segments. High values pull strings straight.</span>
@@ -176,6 +184,7 @@
           max="40.0" 
           step="1.0" 
           bind:value={workspaceState.physicsSettings.forces.strain_max} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-cyan"
         />
         <span class="control-desc">If average segment force exceeds this limit, new intermediate segments spawn to relieve tension.</span>
@@ -194,6 +203,7 @@
           max="15.0" 
           step="0.5" 
           bind:value={workspaceState.physicsSettings.forces.strain_min} 
+          oninput={() => workspaceState.physicsSettings = { ...workspaceState.physicsSettings }}
           class="cyber-slider slider-yellow"
         />
         <span class="control-desc">If average segment force drops below this limit (too relaxed), extra segments are deleted to prevent curling.</span>

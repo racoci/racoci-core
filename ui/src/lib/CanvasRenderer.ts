@@ -212,8 +212,9 @@ export class CanvasRenderer {
         const dx = tNode.x - sNode.x;
         const dy = tNode.y - sNode.y;
         const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-        // Clamp the number of intermediate nodes to a maximum of 5 to not overload the simulation!
-        const numPoints = Math.min(5, Math.max(0, Math.floor(dist / 45) - 1));
+        // Clamp the number of intermediate nodes to a maximum of maxIntermediatePoints, with at least 1 point!
+        const maxPts = (this.physicsSettings?.maxIntermediatePoints) ?? 5;
+        const numPoints = Math.min(maxPts, Math.max(1, Math.floor(dist / 45)));
         for (let i = 1; i <= numPoints; i++) {
           const t = i / (numPoints + 1);
           points.push({
