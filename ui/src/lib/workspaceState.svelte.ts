@@ -82,7 +82,7 @@ MATCH {
           },
           {
             type: 'split',
-            split: 'horizontal',
+            split: 'vertical',
             percent: 65,
             children: [
               {
