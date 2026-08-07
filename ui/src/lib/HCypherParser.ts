@@ -79,9 +79,9 @@ export function parseHCypher(text: string): ParseResult {
     membraneNames.add(name);
   }
 
-  // Refined edge regex that supports label, properties, or minimalist colors inside brackets:
+  // Refined edge regex that supports optional properties/colors on nodes, and label, properties, or minimalist colors inside brackets:
   // e.g. -[:DEPENDS_ON #00d2ff]-> or -[:DEPENDS_ON {color: "cyan"}]->
-  const edgeRegex = /\((\w+)\)\s*(?:-\s*\[\s*:?(\w+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\s*\]\s*->|->)\s*\((\w+)\)/g;
+  const edgeRegex = /\((\w+)(?:\s*\{[^}]*\})?\s*(?:#[0-9a-fA-F]{6})?\)\s*(?:-\s*\[\s*:?(\w+)(?:\s*(?:\{([^}]+)\}|(#[0-9a-fA-F]{6})))?\s*\]\s*->|->)\s*\((\w+)(?:\s*\{[^}]*\})?\s*(?:#[0-9a-fA-F]{6})?\)/g;
   let preEdgeMatch;
   while ((preEdgeMatch = edgeRegex.exec(text)) !== null) {
     const relLabel = preEdgeMatch[2];
