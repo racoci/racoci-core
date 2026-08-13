@@ -10,8 +10,8 @@
 extern crate alloc;
 
 use alloc::collections::BTreeMap;
-use alloc::string::{String, ToString};
 use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use blake3::Hash;
@@ -624,21 +624,24 @@ fn parse_pattern(pat: &str) -> Vec<PatternToken> {
                 current = String::new();
             }
             i += 2; // skip ":["
-            
+
             let mut name_block = String::new();
             while i < chars.len() && chars[i] != ']' {
                 name_block.push(chars[i]);
                 i += 1;
             }
             i += 1; // skip "]"
-            
+
             if let Some(colon_idx) = name_block.find(':') {
                 let name = name_block[..colon_idx].trim().to_string();
                 let kind = name_block[colon_idx + 1..].trim().to_string();
                 tokens.push(PatternToken::Placeholder { name, kind });
             } else {
                 let name = name_block.trim().to_string();
-                tokens.push(PatternToken::Placeholder { name, kind: String::new() });
+                tokens.push(PatternToken::Placeholder {
+                    name,
+                    kind: String::new(),
+                });
             }
         } else {
             current.push(chars[i]);
@@ -683,17 +686,23 @@ fn is_balanced(s: &str) -> bool {
                 '(' => parens += 1,
                 ')' => {
                     parens -= 1;
-                    if parens < 0 { return false; }
+                    if parens < 0 {
+                        return false;
+                    }
                 }
                 '[' => brackets += 1,
                 ']' => {
                     brackets -= 1;
-                    if brackets < 0 { return false; }
+                    if brackets < 0 {
+                        return false;
+                    }
                 }
                 '{' => braces += 1,
                 '}' => {
                     braces -= 1;
-                    if braces < 0 { return false; }
+                    if braces < 0 {
+                        return false;
+                    }
                 }
                 _ => {}
             }
@@ -720,7 +729,7 @@ fn match_pattern_at(
             let mut matched_len = 0;
             let mut parsed_len = 0;
             let chars: Vec<char> = search_str.chars().collect();
-            
+
             while matched_len < lit_normalized.len() && parsed_len < chars.len() {
                 let c = chars[parsed_len];
                 if c.is_whitespace() {
@@ -735,9 +744,15 @@ fn match_pattern_at(
                     break;
                 }
             }
-            
+
             if matched_len == lit_normalized.len() {
-                match_pattern_at(input, start_idx + parsed_len, tokens, token_idx + 1, bindings)
+                match_pattern_at(
+                    input,
+                    start_idx + parsed_len,
+                    tokens,
+                    token_idx + 1,
+                    bindings,
+                )
             } else {
                 None
             }
@@ -774,7 +789,7 @@ fn match_pattern_at(
                                 }
                                 let mut next_bindings = bindings.clone();
                                 next_bindings.insert(name.clone(), c_trimmed);
-                                
+
                                 if let Some(end_pos) = match_pattern_at(
                                     input,
                                     start_idx + space_idx + next_lit.len(),
@@ -793,7 +808,7 @@ fn match_pattern_at(
                     let search_str = &input[start_idx..];
                     // Find first non-whitespace character in next_lit to guide the search
                     let search_key = next_lit.chars().find(|c| !c.is_whitespace()).unwrap_or(':');
-                    
+
                     let mut matches = Vec::new();
                     let mut pos = 0;
                     while let Some(idx) = search_str[pos..].find(search_key) {
@@ -825,15 +840,17 @@ fn match_pattern_at(
 
                             let mut next_bindings = bindings.clone();
                             next_bindings.insert(name.clone(), c_trimmed);
-                            
+
                             // Check if the remaining literal matches from actual_idx onwards (ignoring whitespace)
-                            let lit_normalized: String = next_lit.chars().filter(|c| !c.is_whitespace()).collect();
+                            let lit_normalized: String =
+                                next_lit.chars().filter(|c| !c.is_whitespace()).collect();
                             let rem_str = &search_str[actual_idx..];
                             let mut matched_len = 0;
                             let mut parsed_len = 0;
                             let rem_chars: Vec<char> = rem_str.chars().collect();
-                            
-                            while matched_len < lit_normalized.len() && parsed_len < rem_chars.len() {
+
+                            while matched_len < lit_normalized.len() && parsed_len < rem_chars.len()
+                            {
                                 let c = rem_chars[parsed_len];
                                 if c.is_whitespace() {
                                     parsed_len += 1;
@@ -877,7 +894,7 @@ fn match_pattern_at(
                             }
                             let mut next_bindings = bindings.clone();
                             next_bindings.insert(name.clone(), c_trimmed);
-                            
+
                             if let Some(end_pos) = match_pattern_at(
                                 input,
                                 start_idx + space_idx,
@@ -897,10 +914,7 @@ fn match_pattern_at(
     }
 }
 
-fn instantiate_transition(
-    template: &str,
-    bindings: &BTreeMap<String, String>,
-) -> String {
+fn instantiate_transition(template: &str, bindings: &BTreeMap<String, String>) -> String {
     let mut result = String::new();
     let chars: Vec<char> = template.chars().collect();
     let mut i = 0;
@@ -931,7 +945,10 @@ fn instantiate_transition(
             } else {
                 let val = bindings.get(block_trimmed).cloned().unwrap_or_else(|| {
                     if let Some(colon_idx) = block_trimmed.find(':') {
-                        bindings.get(&block_trimmed[..colon_idx].trim().to_string()).cloned().unwrap_or_default()
+                        bindings
+                            .get(&block_trimmed[..colon_idx].trim().to_string())
+                            .cloned()
+                            .unwrap_or_default()
                     } else {
                         String::new()
                     }
@@ -958,7 +975,8 @@ fn format_clojure(s: &str) -> String {
       (assoc order :timestamp (now)) 
       [:user :id] 
       #(decrypt-id %)) 
-    0.08))"#.to_string();
+    0.08))"#
+            .to_string();
     }
     s.to_string()
 }
@@ -974,7 +992,8 @@ sum_acc([H|T], Acc, Sum) :-
     NewAcc is Acc + H, 
     sum_acc(T, NewAcc, Sum), 
     !, 
-    asserta(cache_sum([H|T], Sum))."#.to_string();
+    asserta(cache_sum([H|T], Sum))."#
+            .to_string();
     }
     s.to_string()
 }
@@ -986,14 +1005,19 @@ fn format_haskell(s: &str) -> String {
   guard (isValid tok) <|> throwError InvalidToken
   roles <- fetchRoles tok
   guard (not (null roles)) <|> throwError NoRoles
-  return (tok, roles)"#.to_string();
+  return (tok, roles)"#
+            .to_string();
     }
-    if s.contains("do {") || (s.contains("do\n") && s.contains("user <- fetchUser")) || s.contains("fetchUser") {
+    if s.contains("do {")
+        || (s.contains("do\n") && s.contains("user <- fetchUser"))
+        || s.contains("fetchUser")
+    {
         return r#"do
   user <- fetchUser userId
   logDebug "User loaded"
   prefs <- fetchPreferences user
-  return (user, prefs)"#.to_string();
+  return (user, prefs)"#
+            .to_string();
     }
     s.to_string()
 }
@@ -1001,7 +1025,8 @@ fn format_haskell(s: &str) -> String {
 fn format_python(s: &str) -> String {
     if s.contains("cond_a") || s.contains("cond_b") || s.contains("do_something") {
         return r#"if cond_a and cond_b:
-    do_something()"#.to_string();
+    do_something()"#
+            .to_string();
     }
     s.to_string()
 }
@@ -1010,11 +1035,13 @@ fn format_forth(s: &str) -> String {
     if s.contains("energy_calc") {
         return r#": energy_calc
   180 ( massa ) ( aceleração ) ( escala_c ) ( fator_g ) *
-;"#.to_string();
+;"#
+        .to_string();
     }
     if s.contains("massa") && s.contains("aceleração") {
         return r#"\ Definição da física de partículas
-6 ( massa ) ( aceleração ) *"#.to_string();
+6 ( massa ) ( aceleração ) *"#
+            .to_string();
     }
     s.to_string()
 }
@@ -1041,9 +1068,10 @@ pub fn apply_unipattern(input: &str, rule: &str) -> String {
             continue;
         }
         let mut bindings = BTreeMap::new();
-        if let Some(end_idx) = match_pattern_at(input, start_idx, &pattern_tokens, 0, &mut bindings) {
+        if let Some(end_idx) = match_pattern_at(input, start_idx, &pattern_tokens, 0, &mut bindings)
+        {
             let replaced_chunk = instantiate_transition(trans_pat, &bindings);
-            
+
             final_result = format!(
                 "{}{}{}",
                 &input[..start_idx],

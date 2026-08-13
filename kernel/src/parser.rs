@@ -24,7 +24,15 @@ pub fn tokenize(input: &str) -> Vec<String> {
                 tokens.push(current);
                 current = String::new();
             }
-        } else if c == '(' || c == ')' || c == '[' || c == ']' || c == '{' || c == '}' || c == '~' || c == ',' {
+        } else if c == '('
+            || c == ')'
+            || c == '['
+            || c == ']'
+            || c == '{'
+            || c == '}'
+            || c == '~'
+            || c == ','
+        {
             if !current.is_empty() {
                 tokens.push(current);
                 current = String::new();
