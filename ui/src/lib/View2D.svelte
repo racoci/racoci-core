@@ -41,9 +41,8 @@
   // Watch physicsSettings changes and sync them
   $effect(() => {
     const renderer = workspaceState.renderer;
-    const settings = workspaceState.physicsSettings;
-    if (renderer && settings) {
-      renderer.physicsSettings = settings;
+    if (renderer) {
+      renderer.physicsSettings = workspaceState;
     }
   });
 

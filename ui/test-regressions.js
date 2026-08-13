@@ -160,4 +160,44 @@ test('▶ Holds UI Regression Tests', async (t) => {
     componentState.isHovered = true;
     assert.strictEqual(renderComponent(componentState), '#ec4899', "When hovered, the tag must expand to show the full hex color code");
   });
+
+  // Test Case 4: Static Code Guard against Deprecated 'physicsSettings' inside View3D.svelte
+  await t.test("Static Code Guard: ui/src/lib/View3D.svelte must NOT contain any deprecated '.physicsSettings' references", async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    
+    const view3dPath = path.resolve('/home/racoci/Projects/racoci/ui/src/lib/View3D.svelte');
+    const fileContent = fs.readFileSync(view3dPath, 'utf8');
+    
+    // Check for any occurrences of "physicsSettings" (case-sensitive)
+    const count = (fileContent.match(/\bphysicsSettings\b/g) || []).length;
+    assert.strictEqual(count, 0, "View3D.svelte should have exactly 0 occurrences of deprecated '.physicsSettings' references!");
+  });
+
+  // Test Case 5: Validate all flat Svelte 5 reactive properties exist on WorkspaceState
+  await t.test("Svelte 5 State Integrity: Verify that all expected flat reactive properties are declared on WorkspaceState", async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    
+    const statePath = path.resolve('/home/racoci/Projects/racoci/ui/src/lib/workspaceState.svelte.ts');
+    const fileContent = fs.readFileSync(statePath, 'utf8');
+    
+    const requiredProps = [
+      'maxIntermediatePoints',
+      'showIntermediatePoints',
+      'massAtom',
+      'massSegment',
+      'forceAtomAtom',
+      'forceAtomSegment',
+      'forceSegmentSegment',
+      'forceSuccessiveTension',
+      'strainMin',
+      'strainMax'
+    ];
+    
+    requiredProps.forEach(prop => {
+      const propRegex = new RegExp(`\\b${prop}\\s*=\\s*\\$state\\b`);
+      assert.ok(propRegex.test(fileContent), `Property '${prop}' must be declared directly on WorkspaceState using Svelte 5 '$state'`);
+    });
+  });
 });

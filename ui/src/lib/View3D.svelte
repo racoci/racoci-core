@@ -1,6 +1,6 @@
 <!-- View3D.svelte (Svelte 5) -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { workspaceState } from './workspaceState.svelte.js';
   import { applyContrastProtection, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from './ColorMath.js';
 
@@ -109,42 +109,45 @@
   $effect(() => {
     if (workspaceState.parseResult) {
       const nextMap = new Map<string, Node3D>();
-      workspaceState.parseResult.nodes.forEach(pn => {
-        const existing = nodes3D.get(pn.id);
-        if (existing) {
-          nextMap.set(pn.id, {
-            ...existing,
-            label: pn.label,
-            color: pn.color || '#ffffff'
-          });
-        } else {
-          // Spawn in a sphere around center
-          const angle = Math.random() * Math.PI * 2;
-          const u = Math.random() * 2 - 1;
-          const r = 80 + Math.random() * 80;
-          
-          nextMap.set(pn.id, {
-            id: pn.id,
-            label: pn.label,
-            x: r * Math.sqrt(1 - u * u) * Math.cos(angle),
-            y: r * Math.sqrt(1 - u * u) * Math.sin(angle),
-            z: r * u,
-            vx: 0,
-            vy: 0,
-            vz: 0,
-            color: pn.color || '#ffffff',
-            radius: 12,
-            isRemoved: false
-          });
+      
+      untrack(() => {
+        workspaceState.parseResult.nodes.forEach(pn => {
+          const existing = nodes3D.get(pn.id);
+          if (existing) {
+            nextMap.set(pn.id, {
+              ...existing,
+              label: pn.label,
+              color: pn.color || '#ffffff'
+            });
+          } else {
+            // Spawn in a sphere around center
+            const angle = Math.random() * Math.PI * 2;
+            const u = Math.random() * 2 - 1;
+            const r = 80 + Math.random() * 80;
+            
+            nextMap.set(pn.id, {
+              id: pn.id,
+              label: pn.label,
+              x: r * Math.sqrt(1 - u * u) * Math.cos(angle),
+              y: r * Math.sqrt(1 - u * u) * Math.sin(angle),
+              z: r * u,
+              vx: 0,
+              vy: 0,
+              vz: 0,
+              color: pn.color || '#ffffff',
+              radius: 12,
+              isRemoved: false
+            });
+          }
+        });
+
+        // Keep removed ones animating
+        for (const [id, vn] of nodes3D.entries()) {
+          if (vn.isRemoved && vn.radius > 1) {
+            nextMap.set(id, vn);
+          }
         }
       });
-
-      // Keep removed ones animating
-      for (const [id, vn] of nodes3D.entries()) {
-        if (vn.isRemoved && vn.radius > 1) {
-          nextMap.set(id, vn);
-        }
-      }
 
       nodes3D = nextMap;
     }
@@ -158,46 +161,49 @@
       nodes3D;
       
       const nextMap = new Map<string, Edge3D>();
-      workspaceState.parseResult.edges.forEach(pe => {
-        const edgeKey = `${pe.source}-${pe.target}`;
-        const existing = edges3D.get(edgeKey);
-        
-        if (existing) {
-          nextMap.set(edgeKey, existing);
-        } else {
-          // Initialize intermediate 3D physical points (segments of the elastic string)
-          const sNode = nodes3D.get(pe.source);
-          const tNode = nodes3D.get(pe.target);
-          const points: Edge3D['points'] = [];
+      
+      untrack(() => {
+        workspaceState.parseResult.edges.forEach(pe => {
+          const edgeKey = `${pe.source}-${pe.target}`;
+          const existing = edges3D.get(edgeKey);
           
-          if (sNode && tNode) {
-            const dx = tNode.x - sNode.x;
-            const dy = tNode.y - sNode.y;
-            const dz = tNode.z - sNode.z;
-            const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
-            // Clamp the number of intermediate nodes to a maximum of maxIntermediatePoints, with at least 1 point!
-            const maxPts = workspaceState.maxIntermediatePoints;
-            const numPoints = Math.min(maxPts, Math.max(1, Math.floor(dist / 45)));
-            for (let i = 1; i <= numPoints; i++) {
-              const t = i / (numPoints + 1);
-              points.push({
-                x: sNode.x + dx * t,
-                y: sNode.y + dy * t,
-                z: sNode.z + dz * t,
-                vx: 0,
-                vy: 0,
-                vz: 0
-              });
+          if (existing) {
+            nextMap.set(edgeKey, existing);
+          } else {
+            // Initialize intermediate 3D physical points (segments of the elastic string)
+            const sNode = nodes3D.get(pe.source);
+            const tNode = nodes3D.get(pe.target);
+            const points: Edge3D['points'] = [];
+            
+            if (sNode && tNode) {
+              const dx = tNode.x - sNode.x;
+              const dy = tNode.y - sNode.y;
+              const dz = tNode.z - sNode.z;
+              const dist = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+              // Clamp the number of intermediate nodes to a maximum of maxIntermediatePoints, with at least 1 point!
+              const maxPts = workspaceState.maxIntermediatePoints;
+              const numPoints = Math.min(maxPts, Math.max(1, Math.floor(dist / 45)));
+              for (let i = 1; i <= numPoints; i++) {
+                const t = i / (numPoints + 1);
+                points.push({
+                  x: sNode.x + dx * t,
+                  y: sNode.y + dy * t,
+                  z: sNode.z + dz * t,
+                  vx: 0,
+                  vy: 0,
+                  vz: 0
+                });
+              }
             }
+            
+            nextMap.set(edgeKey, {
+              id: pe.id,
+              source: pe.source,
+              target: pe.target,
+              points
+            });
           }
-          
-          nextMap.set(edgeKey, {
-            id: pe.id,
-            source: pe.source,
-            target: pe.target,
-            points
-          });
-        }
+        });
       });
       edges3D = nextMap;
     }
@@ -435,7 +441,7 @@
 
   function update3DPhysics() {
     const nodes = Array.from(nodes3D.values());
-    const kRepulsion = workspaceState.physicsSettings.forces.atom_atom; // dynamically bound!
+    const kRepulsion = workspaceState.forceAtomAtom; // dynamically bound flat property!
     const kGravity = 0.02;
     const kSpring = 0.02;
     const kDamping = 0.85;
@@ -452,7 +458,7 @@
 
         if (dist < 200) {
           const force = kRepulsion / (dist * dist);
-          const mass = workspaceState.physicsSettings.masses.atom || 1.0; // dynamically bound mass!
+          const mass = workspaceState.massAtom || 1.0; // dynamically bound mass!
           const fx = (dx / dist) * force / mass;
           const fy = (dy / dist) * force / mass;
           const fz = (dz / dist) * force / mass;
@@ -524,30 +530,30 @@
               const jdy = by - ay;
               const jdz = bz - az;
               const jd = Math.sqrt(jdx * jdx + jdy * jdy + jdz * jdz) || 1;
-              const jforce = (jd - segmentRestLen) * workspaceState.physicsSettings.forces.successive_tension; // dynamically bound!
+              const jforce = (jd - segmentRestLen) * workspaceState.forceSuccessiveTension; // dynamically bound!
               const jfx = (jdx / jd) * jforce;
               const jfy = (jdy / jd) * jforce;
               const jfz = (jdz / jd) * jforce;
 
               if (k > 0 && pt_prev) {
-                const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
+                const segMass = workspaceState.massSegment || 0.25;
                 pt_prev.vx += jfx / segMass;
                 pt_prev.vy += jfy / segMass;
                 pt_prev.vz += jfz / segMass;
               } else if (n1.id !== draggedNodeId) {
-                const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
+                const atomMass = workspaceState.massAtom || 1.0;
                 n1.vx += (jfx * 0.15) / atomMass;
                 n1.vy += (jfy * 0.15) / atomMass;
                 n1.vz += (jfz * 0.15) / atomMass;
               }
 
               if (k < n_initial && pt_curr) {
-                const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
+                const segMass = workspaceState.massSegment || 0.25;
                 pt_curr.vx -= jfx / segMass;
                 pt_curr.vy -= jfy / segMass;
                 pt_curr.vz -= jfz / segMass;
               } else if (n2.id !== draggedNodeId) {
-                const atomMass = workspaceState.physicsSettings.masses.atom || 1.0;
+                const atomMass = workspaceState.massAtom || 1.0;
                 n2.vx -= (jfx * 0.15) / atomMass;
                 n2.vy -= (jfy * 0.15) / atomMass;
                 n2.vz -= (jfz * 0.15) / atomMass;
@@ -576,9 +582,9 @@
               }
               const avgStrain = totalStrain / (currentN + 1);
 
-              const strainMin = workspaceState.physicsSettings.forces.strain_min ?? 2.0;
-              const strainMax = workspaceState.physicsSettings.forces.strain_max ?? 10.0;
-              const maxPts = workspaceState.physicsSettings.maxIntermediatePoints ?? 5;
+              const strainMin = workspaceState.strainMin ?? 2.0;
+              const strainMax = workspaceState.strainMax ?? 10.0;
+              const maxPts = workspaceState.maxIntermediatePoints ?? 5;
 
               if (avgStrain < strainMin) {
                 // Too relaxed (force below min threshold): Prune a segment
@@ -614,8 +620,8 @@
 
                 if (rdist < avoidanceRadius) {
                   // lower intensity repulsion (less mass) - dynamically bound!
-                  const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-                  const rforce = (workspaceState.physicsSettings.forces.atom_nonSuccessive / (rdist * rdist)) / segMass;
+                  const segMass = workspaceState.massSegment || 0.25;
+                  const rforce = (workspaceState.forceAtomSegment / (rdist * rdist)) / segMass;
                   pt.vx += (rdx / rdist) * rforce;
                   pt.vy += (rdy / rdist) * rforce;
                   pt.vz += (rdz / rdist) * rforce;
@@ -665,8 +671,8 @@
 
           if (dist < avoidanceRadius) {
             // Dynamically bound segment repulsion scaled by segment mass!
-            const segMass = workspaceState.physicsSettings.masses.segment || 0.25;
-            const force = (workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive / (dist * dist)) / segMass;
+            const segMass = workspaceState.massSegment || 0.25;
+            const force = (workspaceState.forceSegmentSegment / (dist * dist)) / segMass;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
             const fz = (dz / dist) * force;
@@ -1071,7 +1077,7 @@
           ctx.restore();
 
           // 2.5 Draw neon yellow joints for intermediate points if showIntermediatePoints is enabled!
-          if (workspaceState.physicsSettings.showIntermediatePoints && pPoints.length > 0) {
+          if (workspaceState.showIntermediatePoints && pPoints.length > 0) {
             ctx.save();
             ctx.fillStyle = '#facc15';
             ctx.shadowColor = '#facc15';

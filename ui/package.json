@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "test": "npx tsc src/lib/CanvasRenderer.ts src/lib/ColorMath.ts src/lib/HCypherParser.ts --noEmit false --target es2022 --module nodenext --moduleResolution nodenext --ignoreConfig && node test-parser.js && node test-geometry.js && node test-dom-render.js && node test-no-warnings.js"
+    "test": "npx tsc src/lib/CanvasRenderer.ts src/lib/ColorMath.ts src/lib/HCypherParser.ts --noEmit false --target es2022 --module nodenext --moduleResolution nodenext --ignoreConfig && node test-parser.js && node test-geometry.js && node test-dom-render.js && node test-no-warnings.js && node test-regressions.js"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
