@@ -8,14 +8,14 @@
 
   // Symmetrical 3x3 Category Matrix configurations
   // Rows/Cols represent the categories: ATOM, SEGMENT (Non-successive), TENSION (Successive)
-  // Directly reads the global workspaceState.physicsSettings state, securing deep reactivity!
+  // Directly reads the global flat reactive workspaceState properties, securing deep reactivity!
   const matrixCells = $derived([
     {
       row: 0, col: 0,
       id: 'atom_atom',
       label: 'Atom-Atom',
       desc: 'Atom separation',
-      value: workspaceState.physicsSettings?.forces?.atom_atom ?? 1500,
+      value: workspaceState.forceAtomAtom,
       min: 0,
       max: 3000,
     },
@@ -24,7 +24,7 @@
       id: 'atom_segment',
       label: 'Atom-Segment',
       desc: 'Obstacle avoidance',
-      value: workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150,
+      value: workspaceState.forceAtomSegment,
       min: 0,
       max: 1000,
     },
@@ -33,7 +33,7 @@
       id: 'segment_atom', // Mirrors row 0, col 1
       label: 'Segment-Atom',
       desc: 'Obstacle avoidance',
-      value: workspaceState.physicsSettings?.forces?.atom_nonSuccessive ?? 150,
+      value: workspaceState.forceAtomSegment,
       min: 0,
       max: 1000,
     },
@@ -42,7 +42,7 @@
       id: 'segment_segment',
       label: 'Segment-Segment',
       desc: 'Highway separation',
-      value: workspaceState.physicsSettings?.forces?.nonSuccessive_nonSuccessive ?? 180,
+      value: workspaceState.forceSegmentSegment,
       min: 0,
       max: 1000,
     },
@@ -51,7 +51,7 @@
       id: 'successive_tension',
       label: 'Tension-Tension',
       desc: 'Successive joint pull',
-      value: workspaceState.physicsSettings?.forces?.successive_tension ?? 0.16,
+      value: workspaceState.forceSuccessiveTension,
       min: 0.01,
       max: 0.50,
     }
@@ -59,20 +59,15 @@
 
   // Decoupled setter function to update deep properties on drag
   function updateValue(id: string, val: number) {
-    if (!workspaceState.physicsSettings?.forces) return;
-    
     if (id === 'atom_atom') {
-      workspaceState.physicsSettings.forces.atom_atom = Math.round(val);
+      workspaceState.forceAtomAtom = Math.round(val);
     } else if (id === 'atom_segment' || id === 'segment_atom') {
-      workspaceState.physicsSettings.forces.atom_nonSuccessive = Math.round(val);
+      workspaceState.forceAtomSegment = Math.round(val);
     } else if (id === 'segment_segment') {
-      workspaceState.physicsSettings.forces.nonSuccessive_nonSuccessive = Math.round(val);
+      workspaceState.forceSegmentSegment = Math.round(val);
     } else if (id === 'successive_tension') {
-      workspaceState.physicsSettings.forces.successive_tension = parseFloat(val.toFixed(3));
+      workspaceState.forceSuccessiveTension = parseFloat(val.toFixed(3));
     }
-    
-    // Re-assign reference to trigger Svelte 5 global reactivity instantly!
-    workspaceState.physicsSettings = { ...workspaceState.physicsSettings };
   }
 
   // Click-drag gesture event handlers for the rotatable knobs
@@ -136,7 +131,7 @@
       <div class="control-group">
         <label for="max-pts-slider" class="control-label">
           <span>Max Intermediates</span>
-          <span class="control-val">{workspaceState.physicsSettings?.maxIntermediatePoints ?? 5} nodes</span>
+          <span class="control-val">{workspaceState.maxIntermediatePoints} nodes</span>
         </label>
         <input 
           id="max-pts-slider"
@@ -144,7 +139,7 @@
           min="1" 
           max="15" 
           step="1" 
-          bind:value={workspaceState.physicsSettings.maxIntermediatePoints} 
+          bind:value={workspaceState.maxIntermediatePoints} 
           class="cyber-slider"
         />
         <span class="control-desc">Limits vertices per edge to prevent performance degradation. (Forcing at least 1 point for joints visibility!)</span>
@@ -155,7 +150,7 @@
           <input 
             id="show-pts-checkbox"
             type="checkbox" 
-            bind:checked={workspaceState.physicsSettings.showIntermediatePoints} 
+            bind:checked={workspaceState.showIntermediatePoints} 
             class="cyber-checkbox"
           />
           <span class="checkbox-custom"></span>
@@ -173,7 +168,7 @@
       <div class="control-group">
         <label for="atom-mass-slider" class="control-label">
           <span>Atom Inertia (M_atom)</span>
-          <span class="control-val text-yellow">{(workspaceState.physicsSettings?.masses?.atom ?? 1.0).toFixed(1)} kg</span>
+          <span class="control-val text-yellow">{workspaceState.massAtom.toFixed(1)} kg</span>
         </label>
         <input 
           id="atom-mass-slider"
@@ -181,7 +176,7 @@
           min="0.1" 
           max="5.0" 
           step="0.1" 
-          bind:value={workspaceState.physicsSettings.masses.atom} 
+          bind:value={workspaceState.massAtom} 
           class="cyber-slider slider-yellow"
         />
         <span class="control-desc">Base mass of standard graph nodes. Higher mass dampens acceleration, making nodes heavier and more stable.</span>
@@ -191,7 +186,7 @@
       <div class="control-group">
         <label for="seg-mass-slider" class="control-label">
           <span>Segment Inertia (M_segment)</span>
-          <span class="control-val text-pink">{(workspaceState.physicsSettings?.masses?.segment ?? 0.25).toFixed(2)} kg</span>
+          <span class="control-val text-pink">{workspaceState.massSegment.toFixed(2)} kg</span>
         </label>
         <input 
           id="seg-mass-slider"
@@ -199,7 +194,7 @@
           min="0.05" 
           max="2.0" 
           step="0.05" 
-          bind:value={workspaceState.physicsSettings.masses.segment} 
+          bind:value={workspaceState.massSegment} 
           class="cyber-slider slider-pink"
         />
         <span class="control-desc">Base mass of intermediate spline nodes. Lower mass makes edge strings extremely agile and responsive to obstacle repulsion.</span>
