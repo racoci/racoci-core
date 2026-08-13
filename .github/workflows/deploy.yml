@@ -1,3 +1,4 @@
+# Holds Substrate UI - Automated GitHub Pages CI/CD Pipeline
 name: Deploy Holds Substrate UI to GitHub Pages
 
 on:
