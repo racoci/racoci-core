@@ -3,41 +3,58 @@ name: Deploy Holds Substrate UI to GitHub Pages
 on:
   push:
     branches:
-      - main
+      - main # Change to "master" if your repository's default branch is different
     paths:
       - 'ui/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
+# Strict security permissions for direct, branchless GitHub Pages deployment
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+# Prevent race conditions during concurrent deployments
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build-and-deploy:
-    concurrency: ci-${{ github.ref }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
-          cache-dependency-path: 'ui/package-lock.json'
+          cache: 'npm' # Change to 'pnpm' or 'yarn' if utilizing a different package manager
+          cache-dependency-path: 'ui/package-lock.json' # Adjust path if lockfile is in a different folder
 
       - name: Install Dependencies
-        working-directory: ui
-        run: npm ci
+        working-directory: ui # Adjust working directory if Svelte project is in root or different subfolder
+        run: npm ci # Use 'npm ci', 'yarn install --frozen-lockfile', or 'pnpm store' based on your setups
 
       - name: Compile and Build Static Bundle
-        working-directory: ui
+        working-directory: ui # Adjust working directory if Svelte project is in root or different subfolder
         run: npm run build
 
-      - name: Deploy Compiled static assets to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Configure GitHub Pages Routing
+        uses: actions/configure-pages@v5
+
+      - name: Upload Static Assets Artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          folder: ui/dist # directory containing compiled index.html and assets
-          branch: gh-pages # target deployment branch
-          clean: true
+          # Directory containing the compiled static index.html and assets
+          # Vite defaults to 'ui/dist', SvelteKit static to 'ui/build', Rollup templates to 'ui/public'
+          path: ui/dist
+
+      - name: Deploy static assets to GitHub Pages Live Server
+        id: deployment
+        uses: actions/deploy-pages@v4
