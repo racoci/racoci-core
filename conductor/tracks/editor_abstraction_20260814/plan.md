@@ -8,12 +8,12 @@
 ## 🛠️ FASE 1: Fundações, Parser TextMate e Renderização (TDD)
 O objetivo desta fase é criar o analisador léxico baseado no padrão TextMate e o container visual esteticamente isolado de digitação.
 
-### 1.1 [ ] Task: Testes Unitários de Tokenização TextMate
+### 1.1 [x] Task: Testes Unitários de Tokenização TextMate
 * **Descrição:** Criar testes unitários rápidos que validem a leitura de arquivos JSON de gramática e a quebra correta de strings em tokens com escopos semânticos.
 * **Teste Automatizado:** `node test-textmate-parser.js`
 * **Documentação:** Criar seção explicativa em `ui/src/lib/TextMateLexer.md`.
 
-### 1.2 [ ] Task: Implementar Analisador Léxico TextMate (`TextMateLexer.ts`)
+### 1.2 [x] Task: Implementar Analisador Léxico TextMate (`TextMateLexer.ts`)
 * **Descrição:** Construir o analisador leve em TypeScript que traduz expressões regulares recursivas e repositórios de padrões do padrão `.tmLanguage.json` em blocos de estilização CSS nativos.
 * **Critério de Conclusão:** O arquivo `TextMateLexer.ts` compila sem warnings e passa em todos os testes unitários da Task 1.1.
 
