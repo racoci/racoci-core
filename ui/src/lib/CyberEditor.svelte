@@ -51,8 +51,12 @@
   let dynamicSuggestions = $derived.by<string[]>(() => {
     const list = new Set<string>();
     tokens.forEach(t => {
-      // Indexa palavras que caem sob escopos de nós ou membranas do TextMate
-      if (t.scopes.includes('entity.name.node.hcypher') || t.scopes.includes('entity.name.membrane.hcypher')) {
+      // Indexa palavras que caem sob escopos de nós, membranas ou cores do TextMate
+      if (
+        t.scopes.includes('entity.name.node.hcypher') || 
+        t.scopes.includes('entity.name.membrane.hcypher') ||
+        t.scopes.includes('constant.numeric.color.hcypher')
+      ) {
         list.add(t.content);
       }
     });
@@ -127,26 +131,14 @@
     if (match) {
       const query = match[1];
 
-      // Se acabou de digitar o prefixo '#', abre o color picker no modo de sugestão rápida
-      if (query === '#') {
-        const coords = getCaretCoordinates();
-        colorPickerX = coords.x;
-        colorPickerY = coords.y - 28; // Abre imediatamente acima da cerquilha!
-        activeColorHex = '#00d2ff'; // Cor inicial sugerida
-        activeColorOffset = pos - 1;
-        showColorPicker = true;
-        showAutocomplete = false;
-        return;
-      }
-
-      // Ativa autocomplete se for maior que 1 letra ou gatilho comum
-      if (query.length >= 1 && query !== '#') {
+      // Ativa autocomplete se for maior que 1 letra ou gatilho comum (incluindo '#')
+      if (query.length >= 1) {
         const coords = getCaretCoordinates();
         autocompleteX = coords.x;
         autocompleteY = coords.y;
         autocompleteQuery = query;
         showAutocomplete = true;
-        showColorPicker = false;
+        showColorPicker = false; // Hide color picker if typing a new word
         selectedIndex = 0;
         return;
       }
@@ -350,8 +342,13 @@
           class:selected={idx === selectedIndex}
           onclick={() => applySuggestion(suggestion)}
         >
-          <span class="suggestion-text">{suggestion}</span>
-          <span class="suggestion-badge">{suggestion === 'MATCH' ? 'control' : 'entity'}</span>
+          <span class="suggestion-text">
+            {#if suggestion.startsWith('#')}
+              <span class="inline-color-swatch" style="background-color: {suggestion};"></span>
+            {/if}
+            {suggestion}
+          </span>
+          <span class="suggestion-badge">{suggestion.startsWith('#') ? 'color' : (suggestion === 'MATCH' ? 'control' : 'entity')}</span>
         </div>
       {/each}
     </div>
@@ -593,5 +590,15 @@
 
   .hidden-color-input {
     display: none;
+  }
+
+  .inline-color-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    border: 1px solid rgba(255,255,255,0.4);
+    vertical-align: middle;
   }
 </style>
