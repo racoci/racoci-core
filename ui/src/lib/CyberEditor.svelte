@@ -118,8 +118,8 @@
         autocompleteY = coords.y;
         autocompleteQuery = query;
         showAutocomplete = true;
-        // Reinicia índice de seleção de sugestões
-        selectedIndex = Math.min(selectedIndex, filteredSuggestions.length - 1);
+        // Reinicia índice de seleção de sugestões sempre que digitar
+        selectedIndex = 0;
         return;
       }
     }
@@ -129,7 +129,7 @@
 
   // Insere o item selecionado na autocompletação diretamente no cursor de digitação
   function applySuggestion(suggestion: string) {
-    if (!textareaElement) return;
+    if (!textareaElement || !suggestion) return; // FIX: Guard against undefined
     
     const text = value;
     const pos = textareaElement.selectionStart;
@@ -167,8 +167,11 @@
         e.preventDefault();
         selectedIndex = (selectedIndex - 1 + filteredSuggestions.length) % filteredSuggestions.length;
       } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
-        applySuggestion(filteredSuggestions[selectedIndex]);
+        const suggestion = filteredSuggestions[selectedIndex];
+        if (suggestion) {
+          e.preventDefault();
+          applySuggestion(suggestion);
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         showAutocomplete = false;
@@ -366,6 +369,14 @@
     color: #94a3b8;
     z-index: 1;
     pointer-events: none; /* deixa cliques passarem para a textarea */
+    
+    /* ALINHAMENTO DE FONTE REQUERIDO */
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    margin: 0;
+    border: none;
   }
 
   /* Textarea transparente (Frente) */
@@ -389,6 +400,13 @@
     word-wrap: break-word;
     overflow: auto;
     z-index: 2;
+
+    /* ALINHAMENTO DE FONTE REQUERIDO (Alinha o cursor ao fundo) */
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+    margin: 0;
   }
 
   /* Mapeamento de Classes e Cores de Tokenização do TextMate */
