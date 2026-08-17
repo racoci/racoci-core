@@ -92,6 +92,9 @@
         }
       });
 
+      // Register the global API for component panel toggling
+      workspaceState.dockviewApi = dockviewInstance;
+
       console.log("INITIALIZING PANEL PANES GRID PERSISTENCE...");
 
       // Helper to establish standard default layout on fresh visit
