@@ -35,9 +35,17 @@
   let autocompleteY = $state(16);
   let autocompleteQuery = $state('');
   let selectedIndex = $state(0);
+  let caretPos = $state(0); // Tracks cursor position for smart expansion!
+
+  function updateCaretPos() {
+    if (textareaElement) {
+      caretPos = textareaElement.selectionStart;
+    }
+  }
 
   // Escopo estático e indexador de escopos semânticos do TextMate em tempo real!
   const staticSuggestions = ['MATCH', 'DEPENDS_ON', 'SYNCS_WITH', 'ROUTES_TO', 'BUFFERED_BY', 'MONITORS', 'LOGS'];
+  const themeColorSuggestions = ['#66fcf1', '#ec4899', '#a855f7', '#facc15', '#22c55e', '#0b0f19', '#05070a', '#ffffff'];
   
   let dynamicSuggestions = $derived.by<string[]>(() => {
     const list = new Set<string>();
@@ -53,6 +61,12 @@
   // Lista consolidada e filtrada de sugestões
   let filteredSuggestions = $derived.by<string[]>(() => {
     const query = autocompleteQuery.toUpperCase();
+    
+    // Se estivermos buscando uma cor (prefixo #), mostre APENAS as cores do tema!
+    if (query.startsWith('#')) {
+      return themeColorSuggestions.filter(s => s.toUpperCase().includes(query));
+    }
+
     if (!query) return [...staticSuggestions, ...dynamicSuggestions];
     
     const combined = Array.from(new Set([...staticSuggestions, ...dynamicSuggestions]));
@@ -286,15 +300,15 @@
     {#each tokens as token}
       <!-- Mapeia escopos semânticos para classes de colorização cyberpunk -->
       {#if token.scopes[0].includes('constant.numeric.color')}
-        <!-- Se o token for uma cor hexadecimal, renderiza-o colapsado com background da própria cor! -->
-        <!-- O span usa a classe custom-hex-tag para estilização base -->
+        <!-- Se o token for uma cor hexadecimal, renderiza-o colapsado, ocultando o texto com a própria cor do fundo! -->
+        {@const isActive = caretPos >= token.start && caretPos <= token.end}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <span 
-          class="custom-hex-tag" 
-          style="color: {token.content}; background-color: {token.content}22;"
+          class="custom-hex-tag {isActive ? 'active' : ''}" 
+          style="--hex-color: {token.content};"
         >
-          {token.content}
+          <span class="hex-hash">#</span><span class="hex-digits">{token.content.slice(1)}</span>
         </span>
       {:else}
         <span class="token-span {token.scopes[0].replace(/\./g, ' ')}">
@@ -310,9 +324,12 @@
     bind:value={value}
     {placeholder}
     onscroll={handleScroll}
-    oninput={handleInput}
-    onkeydown={handleKeyDown}
-    onmousemove={handleMouseMove}
+    oninput={(e) => { handleInput(e); updateCaretPos(); }}
+    onkeydown={(e) => { handleKeyDown(e); updateCaretPos(); }}
+    onkeyup={updateCaretPos}
+    onclick={updateCaretPos}
+    onmouseup={updateCaretPos}
+    onmousemove={(e) => { handleMouseMove(e); updateCaretPos(); }}
     spellcheck="false"
     class="editor-textarea"
   ></textarea>
@@ -465,10 +482,26 @@
 
   /* 5. Constantes de Cores Hexadecimais customizadas */
   :global(.custom-hex-tag) {
+    color: var(--hex-color);
     font-weight: bold;
     border-radius: 4px;
-    padding: 0 2px;
-    border: 1px solid currentColor;
+    padding: 0 1px;
+    transition: background-color 0.1s;
+  }
+  
+  /* Oculta os digitos visualmente fundindo com o background, formando um bloco de cor, mas preservando o tamanho real! */
+  :global(.hex-digits) {
+    color: transparent;
+    background-color: var(--hex-color);
+    border-radius: 2px;
+    transition: background-color 0.1s, color 0.1s;
+  }
+
+  /* Revela o código quando o cursor passa por cima ou está ativo! */
+  :global(.custom-hex-tag:hover .hex-digits),
+  :global(.custom-hex-tag.active .hex-digits) {
+    color: var(--hex-color);
+    background-color: rgba(255, 255, 255, 0.1);
   }
 
   /* 6. Relacionamentos: Ciano Neon */
