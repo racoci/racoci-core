@@ -30,6 +30,45 @@
     }
   }
 
+  // === FASE 4: HISTÓRICO DE DESFAZER (UNDO) CUSTOMIZADO ===
+  // Necessário pois manipulações programáticas de string em Svelte sobrescrevem o undo nativo do navegador
+  let historyStack = $state<string[]>([]);
+  let historyIndex = $state(-1);
+  let isUndoing = false;
+
+  function pushHistory(newVal: string) {
+    if (isUndoing) return; // Não salva no histórico enquanto estivermos desfazendo!
+    
+    // Se o texto for igual ao último estado salvo, ignora
+    if (historyIndex >= 0 && historyStack[historyIndex] === newVal) return;
+    
+    // Se o usuário desfez e começou a digitar de novo, trunca o "futuro" do histórico
+    const newStack = historyStack.slice(0, historyIndex + 1);
+    newStack.push(newVal);
+    
+    // Limita o histórico a 50 passos para poupar memória
+    if (newStack.length > 50) newStack.shift();
+    
+    historyStack = newStack;
+    historyIndex = historyStack.length - 1;
+  }
+
+  function handleUndo() {
+    if (historyIndex > 0) {
+      isUndoing = true;
+      historyIndex--;
+      value = historyStack[historyIndex];
+      // Libera a trava de undo no próximo tick para permitir novas digitações
+      setTimeout(() => isUndoing = false, 0);
+    }
+  }
+
+  // Hook inicial e reativo para salvar as edições
+  $effect(() => {
+    // Escuta o bindable value globalmente e empurra para a pilha
+    pushHistory(value);
+  });
+
   // === FASE 2: INDEXADOR HÍBRIDO E AUTOCOMPLETE ===
   let showAutocomplete = $state(false);
   let autocompleteX = $state(0);
@@ -178,8 +217,15 @@
     showAutocomplete = false;
   }
 
-  // Captura comandos de teclado direcionais para navegar pelas sugestões
+  // Captura comandos de teclado direcionais para navegar pelas sugestões e atalhos de Undo
   function handleKeyDown(e: KeyboardEvent) {
+    // Intercepta Ctrl+Z (Windows/Linux) ou Cmd+Z (Mac) para disparar nosso Undo Customizado!
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      handleUndo();
+      return;
+    }
+
     if (showAutocomplete && filteredSuggestions.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -288,6 +334,20 @@
 </script>
 
 <div class="cyber-editor-viewport">
+  <!-- Botão Flutuante Explícito de Undo -->
+  <button 
+    class="undo-button" 
+    onclick={handleUndo} 
+    disabled={historyIndex <= 0}
+    title="Undo (Ctrl+Z)"
+  >
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 14 4 9l5-5"/>
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>
+    </svg>
+    <span>UNDO</span>
+  </button>
+
   <!-- Sobreposição de realce TextMate (Atrás) -->
   <div class="highlights-layer" bind:this={highlightsElement}>
     {#each tokens as token}
@@ -600,5 +660,43 @@
     margin-right: 6px;
     border: 1px solid rgba(255,255,255,0.4);
     vertical-align: middle;
+  }
+
+  /* Botão Flutuante de Undo */
+  .undo-button {
+    position: absolute;
+    top: 10px;
+    right: 18px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background-color: rgba(10, 14, 26, 0.7);
+    border: 1px solid rgba(102, 252, 241, 0.3);
+    border-radius: 4px;
+    color: #66fcf1;
+    font-family: inherit;
+    font-size: 8px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.1s ease-in-out;
+  }
+
+  .undo-button:hover:not(:disabled) {
+    background-color: rgba(102, 252, 241, 0.15);
+    border-color: #66fcf1;
+    box-shadow: 0 0 8px rgba(102, 252, 241, 0.2);
+  }
+
+  .undo-button:active:not(:disabled) {
+    transform: scale(0.95);
+  }
+
+  .undo-button:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
   }
 </style>
