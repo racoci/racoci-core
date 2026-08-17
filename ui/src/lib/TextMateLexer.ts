@@ -2,6 +2,8 @@
 export interface HighlightToken {
   content: string;
   scopes: string[];
+  start: number;
+  end: number;
 }
 
 export interface TextMatePattern {
@@ -98,12 +100,16 @@ export class TextMateLexer {
         // Plain text gap token inheriting the grammar base scope
         tokens.push({
           content: text.slice(currentIdx, m.start),
-          scopes: [this.baseScope]
+          scopes: [this.baseScope],
+          start: currentIdx,
+          end: m.start
         });
       }
       tokens.push({
         content: m.content,
-        scopes: [m.scope]
+        scopes: [m.scope],
+        start: m.start,
+        end: m.end
       });
       currentIdx = m.end;
     });
@@ -112,7 +118,9 @@ export class TextMateLexer {
     if (currentIdx < text.length) {
       tokens.push({
         content: text.slice(currentIdx),
-        scopes: [this.baseScope]
+        scopes: [this.baseScope],
+        start: currentIdx,
+        end: text.length
       });
     }
 
