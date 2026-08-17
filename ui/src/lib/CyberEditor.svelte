@@ -2,6 +2,7 @@
 <script lang="ts">
   import { onMount, untrack } from 'svelte';
   import { TextMateLexer, type HighlightToken } from './TextMateLexer.js';
+  import { applyContrastProtection } from './ColorMath.js';
 
   // Props using Svelte 5 runes
   let {
@@ -302,11 +303,12 @@
       {#if token.scopes[0].includes('constant.numeric.color')}
         <!-- Se o token for uma cor hexadecimal, renderiza-o colapsado, ocultando o texto com a própria cor do fundo! -->
         {@const isActive = caretPos >= token.start && caretPos <= token.end}
+        {@const contrastColor = applyContrastProtection(token.content, '#ffffff')}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <span 
           class="custom-hex-tag {isActive ? 'active' : ''}" 
-          style="--hex-color: {token.content};"
+          style="--hex-color: {token.content}; --hex-contrast: {contrastColor};"
         >
           <span class="hex-hash">#</span><span class="hex-digits">{token.content.slice(1)}</span>
         </span>
@@ -500,8 +502,8 @@
   /* Revela o código quando o cursor passa por cima ou está ativo! */
   :global(.custom-hex-tag:hover .hex-digits),
   :global(.custom-hex-tag.active .hex-digits) {
-    color: var(--hex-color);
-    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--hex-contrast);
+    background-color: var(--hex-color);
   }
 
   /* 6. Relacionamentos: Ciano Neon */
