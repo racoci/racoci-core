@@ -1,100 +1,11 @@
 <!-- WorkspacesView.svelte -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { workspaceState } from './workspaceState.svelte.js';
-
-  const allPanels = [
-    { id: 'workspaces', name: 'Workspaces List', component: 'workspaces' },
-    { id: 'editor', name: 'H-Cypher Editor', component: 'editor' },
-    { id: 'canvas', name: '2D Hypergraph', component: 'canvas' },
-    { id: 'projection3d', name: '3D Projection', component: 'projection3d' },
-    { id: 'physics_settings', name: 'Simulation Settings', component: 'physics_settings' },
-    { id: 'ssr_simulator', name: 'SSR Timeline', component: 'ssr_simulator' },
-    { id: 'dev_tools', name: 'Dev Tools Console', component: 'dev_tools' }
-  ];
-
-  // A local reactive variable to force the {#each} loop to re-render when a panel is closed via the X button
-  let dockviewTick = $state(0);
-
-  function togglePanel(panelConfig: any) {
-    if (!workspaceState.dockviewApi) return;
-    
-    // Check if the panel is already active in the dockview grid
-    const existingPanel = workspaceState.dockviewApi.getPanel(panelConfig.id);
-    
-    if (existingPanel) {
-      // If active, remove it
-      workspaceState.dockviewApi.removePanel(existingPanel);
-    } else {
-      // If missing, re-add it to the grid!
-      workspaceState.dockviewApi.addPanel({
-        id: panelConfig.id,
-        component: panelConfig.component,
-        title: panelConfig.name
-      });
-    }
-  }
-
-  // Reactive helper to check if a panel is currently open
-  function isPanelActive(id: string) {
-    // We read dockviewTick to establish a Svelte 5 dependency, causing this to re-run!
-    dockviewTick;
-    return workspaceState.dockviewApi?.getPanel(id) !== undefined;
-  }
-
-  onMount(() => {
-    // Subscribe to Dockview layout events so we know when the user clicks an "X" to close a panel
-    let disposable: any = null;
-    
-    // Use an interval to poll since workspaceState.dockviewApi might be injected slightly after mount
-    const checkInterval = setInterval(() => {
-      if (workspaceState.dockviewApi && !disposable) {
-        disposable = workspaceState.dockviewApi.onDidLayoutChange(() => {
-          dockviewTick++; // Trigger Svelte 5 re-render!
-        });
-        clearInterval(checkInterval);
-        dockviewTick++; // Initial sync
-      }
-    }, 100);
-
-    return () => {
-      clearInterval(checkInterval);
-      if (disposable) disposable.dispose();
-    };
-  });
 </script>
 
 <div class="workspaces-panel">
-  <!-- Active Panels Section -->
-  <div class="panel-header">
-    <h3>Active Panels</h3>
-  </div>
-  
-  <div class="panels-list">
-    {#each allPanels as panel}
-      <button 
-        class="panel-toggle-btn"
-        class:active={isPanelActive(panel.id)}
-        onclick={() => togglePanel(panel)}
-        title="Toggle Panel"
-      >
-        <span class="panel-status-icon">{isPanelActive(panel.id) ? '👁' : '✖'}</span>
-        <span class="panel-name">{panel.name}</span>
-      </button>
-    {/each}
-    
-    <button 
-      class="panel-toggle-btn reset-btn"
-      onclick={() => { if (workspaceState.resetLayout) workspaceState.resetLayout(); }}
-      title="Restore pristine default window arrangement"
-    >
-      <span class="panel-status-icon">🔄</span>
-      <span class="panel-name">Factory Reset Layout</span>
-    </button>
-  </div>
-
   <!-- Projections Section -->
-  <div class="panel-header mt-4">
+  <div class="panel-header">
     <h3>Projections Registry</h3>
   </div>
 
@@ -155,14 +66,6 @@
     padding: 12px 16px;
     border-bottom: 1px solid #1f2833;
     background-color: #0d0e15;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-  }
-
-  .mt-4 {
-    margin-top: 8px;
-    border-top: 1px solid #1f2833;
   }
 
   .panel-header h3 {
@@ -172,60 +75,6 @@
     text-transform: uppercase;
     letter-spacing: 1px;
     text-shadow: 0 0 6px rgba(102, 252, 241, 0.4);
-  }
-
-  .panels-list {
-    padding: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .panel-toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(10, 14, 26, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
-    padding: 6px 10px;
-    color: #94a3b8;
-    font-family: "Fira Code", monospace;
-    font-size: 9.5px;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.15s ease-in-out;
-  }
-
-  .panel-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
-  }
-
-  .panel-toggle-btn.active {
-    background: rgba(102, 252, 241, 0.05);
-    border-color: rgba(102, 252, 241, 0.3);
-    color: #66fcf1;
-  }
-
-  .panel-status-icon {
-    font-size: 12px;
-    min-width: 14px;
-    text-align: center;
-  }
-
-  .reset-btn {
-    margin-top: 4px;
-    border-top: 1px dashed rgba(244, 63, 94, 0.3);
-    color: #f43f5e;
-  }
-
-  .reset-btn:hover {
-    background: rgba(244, 63, 94, 0.1);
-    border-color: rgba(244, 63, 94, 0.4);
-    color: #fb7185;
-    box-shadow: 0 0 8px rgba(244, 63, 94, 0.15);
   }
 
   .workspace-list {

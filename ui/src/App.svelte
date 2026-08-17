@@ -17,7 +17,39 @@
   import PhysicsSettingsView from './lib/PhysicsSettingsView.svelte';
 
   let dockviewContainer = $state<HTMLDivElement | null>(null);
-  let dockviewInstance: DockviewComponent | null = null;
+  let dockviewInstance = $state<DockviewComponent | null>(null);
+  let dockviewTick = $state(0);
+
+  const allPanels = [
+    { id: 'workspaces', name: 'Workspaces List', component: 'workspaces' },
+    { id: 'editor', name: 'H-Cypher Editor', component: 'editor' },
+    { id: 'canvas', name: '2D Hypergraph', component: 'canvas' },
+    { id: 'projection3d', name: '3D Projection', component: 'projection3d' },
+    { id: 'physics_settings', name: 'Simulation Settings', component: 'physics_settings' },
+    { id: 'ssr_simulator', name: 'SSR Timeline', component: 'ssr_simulator' },
+    { id: 'dev_tools', name: 'Dev Tools Console', component: 'dev_tools' }
+  ];
+
+  function togglePanel(panelConfig: any) {
+    if (!dockviewInstance) return;
+    
+    const existingPanel = dockviewInstance.getPanel(panelConfig.id);
+    
+    if (existingPanel) {
+      dockviewInstance.removePanel(existingPanel);
+    } else {
+      dockviewInstance.addPanel({
+        id: panelConfig.id,
+        component: panelConfig.component,
+        title: panelConfig.name
+      });
+    }
+  }
+
+  function isPanelActive(id: string) {
+    dockviewTick; // Svelte 5 reactive trigger
+    return dockviewInstance?.getPanel(id) !== undefined;
+  }
 
   onMount(() => {
     let layoutChangeDisposable: any = null;
@@ -167,6 +199,7 @@
 
       // ONLY subscribe to layout change events after initial layout is established!
       layoutChangeDisposable = dockviewInstance.onDidLayoutChange(() => {
+        dockviewTick++; // Update reactive state for header panel buttons
         try {
           const layout = dockviewInstance.toJSON();
           localStorage.setItem('holds_dockview_layout_v1', JSON.stringify(layout));
@@ -176,6 +209,7 @@
       });
 
       console.log("DOCKVIEW WORKSPACE SECURED!");
+      dockviewTick++; // Initial sync tick
     }
 
     return () => {
@@ -196,7 +230,27 @@
     <div class="logo-area">
       <span class="pulse-dot"></span>
       <span class="title">RACOCI Holds Substrate</span>
-      <span class="sub-title">VSCode-Grade Docking Workspace Manager</span>
+    </div>
+
+    <!-- Active Panels Toggles -->
+    <div class="header-panels">
+      {#each allPanels as panel}
+        <button 
+          class="header-toggle-btn"
+          class:active={isPanelActive(panel.id)}
+          onclick={() => togglePanel(panel)}
+          title="{isPanelActive(panel.id) ? 'Close' : 'Open'} {panel.name}"
+        >
+          {panel.name}
+        </button>
+      {/each}
+      <button 
+        class="header-toggle-btn reset-btn"
+        onclick={() => { if (workspaceState.resetLayout) workspaceState.resetLayout(); }}
+        title="Factory Reset Layout"
+      >
+        🔄 Reset
+      </button>
     </div>
     
     <!-- Real-time Status Telemetry indicators -->
@@ -270,6 +324,54 @@
     gap: 12px;
   }
 
+  .header-panels {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 20px;
+    flex: 1;
+  }
+
+  .header-toggle-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    padding: 4px 8px;
+    font-size: 9px;
+    font-weight: bold;
+    font-family: "Fira Code", monospace;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.1s ease-in-out;
+    text-transform: uppercase;
+  }
+
+  .header-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .header-toggle-btn.active {
+    background: rgba(102, 252, 241, 0.1);
+    border-color: #66fcf1;
+    color: #66fcf1;
+    box-shadow: 0 0 6px rgba(102, 252, 241, 0.2);
+  }
+
+  .header-toggle-btn.reset-btn {
+    border-color: rgba(244, 63, 94, 0.3);
+    color: #f43f5e;
+    margin-left: 12px;
+  }
+
+  .header-toggle-btn.reset-btn:hover {
+    background: rgba(244, 63, 94, 0.15);
+    border-color: rgba(244, 63, 94, 0.6);
+    color: #fb7185;
+    box-shadow: 0 0 6px rgba(244, 63, 94, 0.3);
+  }
+
   .pulse-dot {
     width: 8px;
     height: 8px;
@@ -290,13 +392,6 @@
     font-size: 13px;
     color: #ffffff;
     letter-spacing: 0.8px;
-  }
-
-  .sub-title {
-    font-size: 10px;
-    color: #45a29e;
-    border-left: 1px solid #1f2833;
-    padding-left: 12px;
   }
 
   .telemetry {
