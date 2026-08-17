@@ -59,13 +59,13 @@ O objetivo desta fase é integrar o seletor de cores, substituir o editor antigo
 * **Descrição:** Construir a tooltip flutuante de hover sobre códigos hexadecimais de cor. Injetar o elemento `<input type="color">` de forma oculta/estilizada para alterar o texto da textarea in-place.
 * **Critério de Conclusão:** Os testes em `test-color-popover.js` passam com sucesso.
 
-### 3.3 [ ] Task: Integração de Dicionário e Gramática H-Cypher no Holds
+### 3.3 [x] Task: Integração de Dicionário e Gramática H-Cypher no Holds
 * **Descrição:** Escrever o arquivo `hcypher.tmLanguage.json` contendo a gramática estrita do Holds. Substituir `HCypherEditor.svelte` por `CyberEditor.svelte` alimentado por essa gramática e mapeado para o `workspaceState` do nosso projeto!
 * **Teste Automatizado:** `npm test` (toda a nossa suíte de testes de regressão doHolds deve continuar passando limpa!).
 
-### 3.4 [ ] Task: Mitigação de Riscos de Performance de Longos Arquivos (Gargalo FinOps/Tech Debt)
+### 3.4 [x] Task: Mitigação de Riscos de Performance de Longos Arquivos (Gargalo FinOps/Tech Debt)
 * **Descrição:** Adicionar proteção de paginação virtual ou de throttling na análise léxica do Svelte para arquivos gigantes de texto (acima de 5.000 linhas), impedindo que digitações intensas travem a thread principal do navegador.
 * **Critério de Conclusão:** Testes de latência de digitação sob arquivos massivos de texto mostram tempo de execução estável abaixo de 8ms por frame.
 
-### 3.5 [ ] Task: Phase Verification & Checkpoint (Refer to workflow.md)
+### 3.5 [x] Task: Phase Verification & Checkpoint (Refer to workflow.md)
 * **Descrição:** Validação final e build de produção completo do Vite com 0 warnings.

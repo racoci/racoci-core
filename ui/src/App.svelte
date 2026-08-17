@@ -7,7 +7,8 @@
   import 'dockview/dist/styles/dockview.css';
 
   // Import our Svelte views
-  import HCypherEditor from './lib/HCypherEditor.svelte';
+  import CyberEditor from './lib/CyberEditor.svelte';
+  import hcypherGrammar from './lib/hcypher.tmLanguage.json';
   import View2D from './lib/View2D.svelte';
   import View3D from './lib/View3D.svelte';
   import WorkspacesView from './lib/WorkspacesView.svelte';
@@ -48,12 +49,12 @@
             init: (params) => {
               // Dynamically mount the Svelte 5 component inside init once the container is fully ready!
               if (options.name === 'editor') {
-                svelteInstance = mount(HCypherEditor, {
+                svelteInstance = mount(CyberEditor, {
                   target: wrapper,
                   props: {
                     get value() { return workspaceState.hCypherCode; },
                     set value(v) { workspaceState.hCypherCode = v; },
-                    get bgColor() { return workspaceState.currentBgColor; }
+                    grammar: hcypherGrammar
                   }
                 });
               } else if (options.name === 'canvas') {
