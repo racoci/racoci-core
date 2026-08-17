@@ -33,6 +33,7 @@ MATCH {
   selectedNode = $state<any>(null);
   renderer = $state<any>(null); // CanvasRenderer reference (fully reactive in Svelte 5!)
   dockviewApi = $state<any>(null); // Global reference to DockviewComponent for panel management
+  resetLayout: (() => void) | null = null; // Global callback to trigger a full factory reset of the grid
 
   // Svelte 5 Native, Flat, Globally and Deeply Reactive Signals!
   maxIntermediatePoints = $state(5);

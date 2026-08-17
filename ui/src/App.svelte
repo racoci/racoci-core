@@ -138,6 +138,15 @@
         settingsPanel.group.api.setSize(340);
       };
 
+      // Export the factory reset callback globally so other components can trigger it
+      workspaceState.resetLayout = () => {
+        if (dockviewInstance) {
+          dockviewInstance.clear(); // Wipe the current corrupted/empty grid
+          createDefaultLayout(); // Re-instantiate the pristine default grid
+          console.log("DOCKVIEW WORKSPACE FACTORY RESET COMPLETED!");
+        }
+      };
+
       // Attempt to load previously saved layout from browser preferences
       const savedLayoutStr = localStorage.getItem('holds_dockview_layout_v1');
       let loaded = false;

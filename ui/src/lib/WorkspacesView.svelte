@@ -82,6 +82,15 @@
         <span class="panel-name">{panel.name}</span>
       </button>
     {/each}
+    
+    <button 
+      class="panel-toggle-btn reset-btn"
+      onclick={() => { if (workspaceState.resetLayout) workspaceState.resetLayout(); }}
+      title="Restore pristine default window arrangement"
+    >
+      <span class="panel-status-icon">🔄</span>
+      <span class="panel-name">Factory Reset Layout</span>
+    </button>
   </div>
 
   <!-- Projections Section -->
@@ -204,6 +213,19 @@
     font-size: 12px;
     min-width: 14px;
     text-align: center;
+  }
+
+  .reset-btn {
+    margin-top: 4px;
+    border-top: 1px dashed rgba(244, 63, 94, 0.3);
+    color: #f43f5e;
+  }
+
+  .reset-btn:hover {
+    background: rgba(244, 63, 94, 0.1);
+    border-color: rgba(244, 63, 94, 0.4);
+    color: #fb7185;
+    box-shadow: 0 0 8px rgba(244, 63, 94, 0.15);
   }
 
   .workspace-list {
