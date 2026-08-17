@@ -1,0 +1,29 @@
+{
+  "scopeName": "source.hcypher",
+  "patterns": [
+    {
+      "name": "comment.line.double-slash.hcypher",
+      "match": "//.*$"
+    },
+    {
+      "name": "keyword.control.hcypher",
+      "match": "\\b(MATCH)\\b"
+    },
+    {
+      "name": "entity.name.node.hcypher",
+      "match": "\\b(kernel|parser|sync|memory|task_queue|monitor|audit_log)\\b"
+    },
+    {
+      "name": "entity.name.membrane.hcypher",
+      "match": "\\[([A-Z_]+)\\s*(#[0-9a-fA-F]{6})?\\]|\\b(KERNEL_SAFETY_ZONE)\\b"
+    },
+    {
+      "name": "constant.numeric.color.hcypher",
+      "match": "#[0-9a-fA-F]{6}"
+    },
+    {
+      "name": "keyword.operator.relationship.hcypher",
+      "match": "DEPENDS_ON|SYNCS_WITH|ROUTES_TO|BUFFERED_BY|MONITORS|LOGS"
+    }
+  ]
+}
