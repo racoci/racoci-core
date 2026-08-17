@@ -123,8 +123,8 @@
     const text = textareaElement.value;
     const pos = textareaElement.selectionStart;
     
-    // Captura a palavra sendo digitada imediatamente antes do cursor
-    const lastWordRegex = /([\w_#]+)$/;
+    // Captura a palavra sendo digitada ou um prefixo de cor de forma isolada!
+    const lastWordRegex = /(#[0-9a-fA-F]*|[\w_]+)$/;
     const textBefore = text.slice(0, pos);
     const match = lastWordRegex.exec(textBefore);
     
@@ -155,8 +155,8 @@
     const text = value;
     const pos = textareaElement.selectionStart;
     
-    // Encontra os limites da palavra parcial sendo editada para substituí-la
-    const lastWordRegex = /([\w_#]+)$/;
+    // Encontra os limites da palavra parcial ou cor sendo editada para substituí-la sem apagar o que está antes!
+    const lastWordRegex = /(#[0-9a-fA-F]*|[\w_]+)$/;
     const textBefore = text.slice(0, pos);
     const match = lastWordRegex.exec(textBefore);
     
@@ -224,9 +224,9 @@
       const end = hexColorRegex.lastIndex;
       
       if (pos >= start && pos <= end) {
-        const coords = getCaretCoordinates();
-        colorPickerX = coords.x;
-        colorPickerY = coords.y - 28; // Aproxima o picker do texto (antes era -48px)
+        // Usa a coordenada real do MOUSE, e não do cursor de digitação (caret)
+        colorPickerX = x;
+        colorPickerY = y - 28; // Abre imediatamente acima do mouse
         activeColorHex = match[1];
         activeColorOffset = start;
         showColorPicker = true;
