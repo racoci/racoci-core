@@ -97,7 +97,7 @@
     return { x, y };
   }
 
-  // Monitora alterações de digitação para abrir o popover de autocompletação
+  // Monitora alterações de digitação para abrir o popover de autocompletação ou color picker
   function handleInput(e: Event) {
     if (!textareaElement) return;
     
@@ -111,20 +111,34 @@
     
     if (match) {
       const query = match[1];
-      // Ativa se for maior que 1 letra ou se for disparado por prefixo/caractere gatilho
-      if (query.length >= 1) {
+
+      // Se acabou de digitar o prefixo '#', abre o color picker no modo de sugestão rápida
+      if (query === '#') {
+        const coords = getCaretCoordinates();
+        colorPickerX = coords.x;
+        colorPickerY = coords.y - 28; // Abre imediatamente acima da cerquilha!
+        activeColorHex = '#00d2ff'; // Cor inicial sugerida
+        activeColorOffset = pos - 1;
+        showColorPicker = true;
+        showAutocomplete = false;
+        return;
+      }
+
+      // Ativa autocomplete se for maior que 1 letra ou gatilho comum
+      if (query.length >= 1 && query !== '#') {
         const coords = getCaretCoordinates();
         autocompleteX = coords.x;
         autocompleteY = coords.y;
         autocompleteQuery = query;
         showAutocomplete = true;
-        // Reinicia índice de seleção de sugestões sempre que digitar
+        showColorPicker = false;
         selectedIndex = 0;
         return;
       }
     }
     
     showAutocomplete = false;
+    showColorPicker = false;
   }
 
   // Insere o item selecionado na autocompletação diretamente no cursor de digitação
@@ -191,17 +205,9 @@
   function handleMouseMove(e: MouseEvent) {
     if (!textareaElement) return;
 
-    // Encontra o caractere correspondente à posição do cursor do mouse
-    const rect = textareaElement.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // Usamos uma detecção simples de token com base em hover nas linhas
-    // Para simplificar e acelerar a detecção em JS nativo:
     const pos = textareaElement.selectionStart;
     const text = textareaElement.value;
     
-    // Regex para extrair a cor sob o cursor
     const hexColorRegex = /(#[0-9a-fA-F]{6})/g;
     let match;
     let found = false;
@@ -210,11 +216,10 @@
       const start = match.index;
       const end = hexColorRegex.lastIndex;
       
-      // Se o cursor estiver fisicamente posicionado sobre os caracteres do código hexadecimal
       if (pos >= start && pos <= end) {
         const coords = getCaretCoordinates();
         colorPickerX = coords.x;
-        colorPickerY = coords.y - 48; // Abre 48px acima do texto
+        colorPickerY = coords.y - 28; // Aproxima o picker do texto (antes era -48px)
         activeColorHex = match[1];
         activeColorOffset = start;
         showColorPicker = true;
@@ -224,7 +229,10 @@
     }
 
     if (!found) {
-      showColorPicker = false;
+      // Avoid closing if we just typed `#`
+      if (text[pos - 1] !== '#') {
+        showColorPicker = false;
+      }
     }
   }
 
@@ -277,9 +285,22 @@
   <div class="highlights-layer" bind:this={highlightsElement}>
     {#each tokens as token}
       <!-- Mapeia escopos semânticos para classes de colorização cyberpunk -->
-      <span class="token-span {token.scopes[0].replace(/\./g, ' ')}">
-        {token.content}
-      </span>
+      {#if token.scopes[0].includes('constant.numeric.color')}
+        <!-- Se o token for uma cor hexadecimal, renderiza-o colapsado com background da própria cor! -->
+        <!-- O span usa a classe custom-hex-tag para estilização base -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span 
+          class="custom-hex-tag" 
+          style="color: {token.content}; background-color: {token.content}22;"
+        >
+          {token.content}
+        </span>
+      {:else}
+        <span class="token-span {token.scopes[0].replace(/\./g, ' ')}">
+          {token.content}
+        </span>
+      {/if}
     {/each}
   </div>
 
@@ -442,11 +463,12 @@
     text-shadow: 0 0 6px rgba(236, 72, 153, 0.3);
   }
 
-  /* 5. Constantes de Cores: Amarelo Neon */
-  :global(.constant.numeric.color) {
-    color: #facc15 !important;
-    text-decoration: underline;
-    text-underline-offset: 3px;
+  /* 5. Constantes de Cores Hexadecimais customizadas */
+  :global(.custom-hex-tag) {
+    font-weight: bold;
+    border-radius: 4px;
+    padding: 0 2px;
+    border: 1px solid currentColor;
   }
 
   /* 6. Relacionamentos: Ciano Neon */
