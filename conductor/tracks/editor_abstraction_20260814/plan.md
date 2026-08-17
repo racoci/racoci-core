@@ -17,7 +17,7 @@ O objetivo desta fase é criar o analisador léxico baseado no padrão TextMate 
 * **Descrição:** Construir o analisador leve em TypeScript que traduz expressões regulares recursivas e repositórios de padrões do padrão `.tmLanguage.json` em blocos de estilização CSS nativos.
 * **Critério de Conclusão:** O arquivo `TextMateLexer.ts` compila sem warnings e passa em todos os testes unitários da Task 1.1.
 
-### 1.3 [ ] Task: Construir o Componente Base `CyberEditor.svelte`
+### 1.3 [x] Task: Construir o Componente Base `CyberEditor.svelte`
 * **Descrição:** Criar a estrutura HTML/CSS de sobreposição de camadas. Integrar o `TextMateLexer.ts` para colorizar em tempo real o texto digitado na camada de destaque por trás da `textarea` invisível.
 * **Teste Automatizado:** `node test-dom-render.js` (atualizado para instanciar o novo editor headless).
 * **Documentação:** Seção dedicada ao funcionamento das camadas em `ui/src/lib/CyberEditor.md`.
@@ -30,16 +30,16 @@ O objetivo desta fase é criar o analisador léxico baseado no padrão TextMate 
 ## 🧭 FASE 2: Indexador Semântico e Painel de Autocompletação (TDD)
 O objetivo desta fase é rastrear o vocabulário semântico digitado e projetar as sugestões em um popover acompanhando as coordenadas do cursor.
 
-### 2.1 [ ] Task: Testes de Indexação e Coordenadas do Caret
+### 2.1 [x] Task: Testes de Indexação e Coordenadas do Caret
 * **Descrição:** Escrever testes que validem o scanner de símbolos (extraindo termos por escopo de tag) e a função matemática que traduz o índice do caractere em coordenadas `(X, Y)` na tela.
 * **Teste Automatizado:** `node test-semantic-indexer.js`
 * **Documentação:** Descrição da lógica de posicionamento geométrico do caret em `ui/src/lib/CaretGeometry.md`.
 
-### 2.2 [ ] Task: Implementar Indexador Híbrido Reativo (Svelte 5 Runes)
+### 2.2 [x] Task: Implementar Indexador Híbrido Reativo (Svelte 5 Runes)
 * **Descrição:** Criar o helper reativo que monitora a string de texto, extrai e agrupa identificadores únicos (como nós e membranas) em dicionários de autocompletação baseando-se em seus escopos semânticos.
 * **Critério de Conclusão:** Os testes de `test-semantic-indexer.js` passam com 100% de sucesso.
 
-### 2.3 [ ] Task: Painel Flutuante e Navegação por Teclado
+### 2.3 [x] Task: Painel Flutuante e Navegação por Teclado
 * **Descrição:** Criar a interface flutuante do autocompleter. Adicionar escutadores de eventos de teclado (`keydown`) na `textarea` para interceptar as setas direcionais, selecionar e aplicar as palavras-chave sugeridas in-place com retorno de foco.
 * **Teste Automatizado:** `node test-dom-render.js` (verificando injeção de texto).
 
@@ -51,11 +51,11 @@ O objetivo desta fase é rastrear o vocabulário semântico digitado e projetar 
 ## 🎨 FASE 3: Color Picker Popover, Integração Holds e Controle de Débito (TDD)
 O objetivo desta fase é integrar o seletor de cores, substituir o editor antigo H-Cypher e validar as margens de performance.
 
-### 3.1 [ ] Task: Testes de Popover de Cores
+### 3.1 [x] Task: Testes de Popover de Cores
 * **Descrição:** Escrever testes que validem a detecção por regex de strings hexadecimais de cor e a renderização do gatilho popover sobre o local das coordenadas do texto.
 * **Teste Automatizado:** `node test-color-popover.js`
 
-### 3.2 [ ] Task: Implementar Popover Flutuante com Color Picker In-Place
+### 3.2 [x] Task: Implementar Popover Flutuante com Color Picker In-Place
 * **Descrição:** Construir a tooltip flutuante de hover sobre códigos hexadecimais de cor. Injetar o elemento `<input type="color">` de forma oculta/estilizada para alterar o texto da textarea in-place.
 * **Critério de Conclusão:** Os testes em `test-color-popover.js` passam com sucesso.
 
